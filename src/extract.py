@@ -3,6 +3,7 @@ Couche Bronze, extraction brute des donnees de marche via yfinance
 """
 
 from datetime import date, timedelta
+from pathlib import Path
 import yfinance as yf
 import logging
 
@@ -10,12 +11,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
-import logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
-
-MAX_RETRIES = 3
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "bronze"
 
 
 def fetch_ticker(ticker_symbol: str, lookback_days: int = 5):
@@ -38,6 +35,17 @@ def fetch_ticker(ticker_symbol: str, lookback_days: int = 5):
 
     raise RuntimeError(f"Echec de l'extraction pour {ticker_symbol} apres {MAX_RETRIES} tentatives") from last_error
 
+
+def save_bronze(df, ticker_name: str, run_date: date) -> Path:
+    """Sauvegarde le DataFrame brut en Parquet, partitionné par date d'exécution."""
+    out_dir = DATA_DIR / run_date.isoformat()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{ticker_name}.parquet"
+    df.to_parquet(out_path, index=False)
+    logger.info("Sauvegardé : %s (%d lignes)", out_path, len(df))
+    return out_path
+
+
 if __name__ == "__main__":
     df = fetch_ticker("BTC-USD")
-    print(df)
+    save_bronze(df, "bitcoin", date.today())
