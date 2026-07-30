@@ -1,0 +1,16 @@
+data/bronze/*
+!data/bronze/.gitkeep
+data/silver/*
+!data/silver/.gitkeep
+data/gold/*
+!data/gold/.gitkeep
+venv/
+env/
+__pycache__/
+*.pyc
+logs/
+airflow.db
+airflow.cfg
+.vscode/
+.DS_Store
+.env
