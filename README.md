@@ -60,7 +60,8 @@ rendements, moyennes mobiles]
 
 ## Structure du projet 
 
-finance-data-platform/
+```text
+📁 finance-data-platform/
 ├── config/       # configuration (tickers suivis)
 ├── dags/         # DAGs Airflow
 ├── src/          # logique métier (extraction, transformation)
