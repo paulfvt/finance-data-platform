@@ -1,0 +1,5 @@
+yfinance>=0.2.43
+pandas>=2.2
+pyarrow>=17.0
+duckdb>=1.0
+python-dotenv>=1.0
