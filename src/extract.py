@@ -4,13 +4,13 @@ Couche Bronze, extraction brute des donnees de marche via yfinance
 
 from datetime import date, timedelta
 from pathlib import Path
-from config.tickers import TICKERS
-import yfinance as yf
 import logging
 import sys
 
-
 sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from config.tickers import TICKERS
+import yfinance as yf
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
