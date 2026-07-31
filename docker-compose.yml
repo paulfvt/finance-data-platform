@@ -13,4 +13,7 @@ services:
     environment:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
-      
+    entrypoint: >
+      bash -c "pip install --no-cache-dir -r /requirements.txt &&
+      airflow standalone"
+      - ./requirements.txt:/requirements.txt
