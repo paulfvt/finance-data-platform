@@ -3,21 +3,27 @@ DAG Airflow, squelette minimal pour verifier qu'Airflow detecte bien le DAG.
 """
 
 import sys
-
 from datetime import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-
 sys.path.append("/opt/airflow")
-from src.extract import run_extraction  # noqa: E402
+from src.extract import run_extraction
 
+default_args = {
+    "owner": "paul",
+    "retries": 3,
+    "retry_delay": 300,  # secondes entre deux tentatives
+}
 
 with DAG(
     dag_id="extract_bronze_daily",
-    schedule=None,
+    description="Extraction quotidienne des cours de marche vers la couche Bronze",
+    default_args=default_args,
+    schedule="0 7 * * *",  # tous les jours a 7h
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    tags=["bronze", "extraction"],
 ) as dag:
 
     extract_task = PythonOperator(
