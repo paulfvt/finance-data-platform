@@ -1,18 +1,16 @@
 services:
   airflow:
     image: apache/airflow:2.9.3-python3.11
-
     container_name: finance_platform_airflow
-    
     ports:
       - "8080:8080"
-    
     command: airflow standalone
-    
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
       - ./config:/opt/airflow/config
       - ./data:/opt/airflow/data
-
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
       
