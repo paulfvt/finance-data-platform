@@ -1,15 +1,16 @@
 """
-DAG Airflow — squelette minimal pour vérifier qu'Airflow détecte bien le DAG.
+DAG Airflow, squelette minimal pour verifier qu'Airflow detecte bien le DAG.
 """
 
-from datetime import datetime
+import sys
 
+from datetime import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 
-def say_hello():
-    print("Hello from extract_bronze_daily")
+sys.path.append("/opt/airflow")
+from src.extract import run_extraction  # noqa: E402
 
 
 with DAG(
@@ -19,7 +20,7 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    hello_task = PythonOperator(
-        task_id="say_hello",
-        python_callable=say_hello,
+    extract_task = PythonOperator(
+        task_id="extract_all_tickers",
+        python_callable=run_extraction,
     )
