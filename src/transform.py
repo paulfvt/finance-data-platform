@@ -30,7 +30,17 @@ def load_bronze_history(ticker_name: str) -> pd.DataFrame:
     df = pd.concat(frames, ignore_index=True)
     return df
 
-
+def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    yfinance renvoie des colonnes en MultiIndex (ex: ('Close', 'BTC-USD'))
+    même pour un seul ticker. On les aplatit en noms simples et lisibles.
+    """
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] if col[0] else col[1] for col in df.columns]
+    df.columns = [str(col).strip().lower().replace(" ", "_") for col in df.columns]
+    return df
 if __name__ == "__main__":
     df = load_bronze_history("bitcoin")
+    df = flatten_columns(df)
+    print(df.columns.tolist())
     print(df)
