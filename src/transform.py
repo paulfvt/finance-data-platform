@@ -19,6 +19,11 @@ import logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+import numpy as np
+
+MOVING_AVERAGE_WINDOWS = (20, 50)
+VOLATILITY_WINDOW = 20
+
 def load_bronze_history(ticker_name: str) -> pd.DataFrame:
     """
     Charge et concatene tous les fichiers Bronze d'un ticker, toutes dates
@@ -75,7 +80,27 @@ def clean_ticker_history(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcule le rendement logarithmique journalier, les moyennes mobiles
+    (20/50 jours) et la volatilité glissante (écart-type des rendements
+    sur 20 jours).
+    """
+    df = df.copy()
+    price_ratio = df["close"] / df["close"].shift(1)
+    df["daily_return"] = np.log(price_ratio.where(price_ratio > 0))
+
+    for window in MOVING_AVERAGE_WINDOWS:
+        df[f"ma_{window}"] = df["close"].rolling(window=window, min_periods=1).mean()
+
+    df["volatility_20d"] = df["daily_return"].rolling(
+        window=VOLATILITY_WINDOW, min_periods=2
+    ).std()
+
+    return df
+
 if __name__ == "__main__":
     df = load_bronze_history("bitcoin")
     df = clean_ticker_history(df)
-    print(df)
+    df = compute_metrics(df)
+    print(df[["date", "close", "daily_return", "ma_20", "volatility_20d"]])
