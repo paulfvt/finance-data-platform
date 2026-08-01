@@ -24,6 +24,8 @@ import numpy as np
 MOVING_AVERAGE_WINDOWS = (20, 50)
 VOLATILITY_WINDOW = 20
 
+SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
+
 def load_bronze_history(ticker_name: str) -> pd.DataFrame:
     """
     Charge et concatene tous les fichiers Bronze d'un ticker, toutes dates
@@ -99,8 +101,42 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def save_silver(df: pd.DataFrame, ticker_name: str) -> Path:
+    """
+    Sauvegarde l'historique Silver complet d'un ticker. Pas partitionné
+    par date comme Bronze : c'est une table d'historique unique,
+    régénérée à chaque run à partir de tout l'historique Bronze.
+    """
+    SILVER_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = SILVER_DIR / f"{ticker_name}.parquet"
+    df.to_parquet(out_path, index=False)
+    logger.info("Silver sauvegardé : %s (%d lignes)", out_path, len(df))
+    return out_path
+
+
+def run_transformation() -> list[Path]:
+    """Point d'entrée principal : transforme l'historique Bronze de chaque ticker suivi."""
+    saved_paths = []
+    errors = {}
+
+    for ticker_name in TICKERS:
+        try:
+            raw = load_bronze_history(ticker_name)
+            cleaned = clean_ticker_history(raw)
+            enriched = compute_metrics(cleaned)
+            path = save_silver(enriched, ticker_name)
+            saved_paths.append(path)
+        except Exception as exc:
+            logger.error("Transformation abandonnée pour %s : %s", ticker_name, exc)
+            errors[ticker_name] = str(exc)
+
+    if errors:
+        logger.warning("Transformation terminée avec %d erreur(s) : %s", len(errors), errors)
+    else:
+        logger.info("Transformation terminée sans erreur (%d tickers).", len(saved_paths))
+
+    return saved_paths
+
+
 if __name__ == "__main__":
-    df = load_bronze_history("bitcoin")
-    df = clean_ticker_history(df)
-    df = compute_metrics(df)
-    print(df[["date", "close", "daily_return", "ma_20", "volatility_20d"]])
+    run_transformation()
