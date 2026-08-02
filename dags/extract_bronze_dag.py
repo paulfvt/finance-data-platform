@@ -21,7 +21,7 @@ with DAG(
     dag_id="extract_bronze_daily",
     description="Extraction quotidienne des cours de marche vers la couche Bronze",
     default_args=default_args,
-    schedule="0 7 * * *",  # tous les jours a 7h
+    schedule=None,
     start_date=datetime(2026, 1, 1),
     catchup=False,
     tags=["bronze", "extraction"],
