@@ -125,7 +125,7 @@ def run_transformation() -> list[Path]:
             cleaned = clean_ticker_history(raw)
             enriched = compute_metrics(cleaned)
             path = save_silver(enriched, ticker_name)
-            saved_paths.append(path)
+            saved_paths.append(str(path))
         except Exception as exc:
             logger.error("Transformation abandonnée pour %s : %s", ticker_name, exc)
             errors[ticker_name] = str(exc)
