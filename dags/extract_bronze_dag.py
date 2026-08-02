@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 sys.path.append("/opt/airflow")
 from src.extract import run_extraction
@@ -30,3 +31,10 @@ with DAG(
         task_id="extract_all_tickers",
         python_callable=run_extraction,
     )
+
+    trigger_silver = TriggerDagRunOperator(
+        task_id="trigger_silver_transformation",
+        trigger_dag_id="transform_silver_daily",
+    )
+
+    extract_task >> trigger_silver
