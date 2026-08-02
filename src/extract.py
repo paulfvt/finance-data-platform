@@ -47,6 +47,7 @@ def save_bronze(df, ticker_name: str, run_date: date) -> Path:
     df.to_parquet(out_path, index=False)
     logger.info("Sauvegarde : %s (%d lignes)", out_path, len(df))
     return out_path
+
 def run_extraction(run_date: date | None = None) -> list[Path]:
     """Point d'entree principal : extrait tous les tickers suivis."""
     run_date = run_date or date.today()
@@ -57,7 +58,7 @@ def run_extraction(run_date: date | None = None) -> list[Path]:
         try:
             df = fetch_ticker(ticker_symbol)
             path = save_bronze(df, ticker_name, run_date)
-            saved_paths.append(path)
+            saved_paths.append(str(path))
         except Exception as exc:
             logger.error("Extraction abandonnee pour %s : %s", ticker_name, exc)
             errors[ticker_name] = str(exc)
