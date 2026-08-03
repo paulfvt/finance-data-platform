@@ -28,7 +28,25 @@ def load_all_returns() -> pd.DataFrame:
     returns = pd.DataFrame(series)
     return returns
 
+def align_calendar(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aligne tous les tickers sur un calendrier commun (tous les jours,
+    y compris week-ends). Les marchés traditionnels sont fermes le
+    week-end : on propage leur derniere valeur connue (forward-fill)
+    plutot que de laisser un trou, pour que les correlations glissantes
+    puissent être calculées sur des fenetres continues.
+
+    Limite assumee : un rendement forward-fille le week-end vaut 0
+    (pas de nouvelle info), ce qui peut legerement lisser les
+    correlations impliquant la crypto sur ces jours-la.
+    """
+    full_range = pd.date_range(returns.index.min(), returns.index.max(), freq="D")
+    aligned = returns.reindex(full_range)
+    aligned = aligned.ffill()
+    aligned.index.name = "date"
+    return aligned
 
 if __name__ == "__main__":
     df = load_all_returns()
+    df = align_calendar(df)
     print(df)
