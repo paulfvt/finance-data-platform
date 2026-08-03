@@ -13,6 +13,7 @@ from config.tickers import TICKERS  # noqa: E402
 
 SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
 
+CORRELATION_WINDOW = 30
 
 def load_all_returns() -> pd.DataFrame:
     """
@@ -46,7 +47,32 @@ def align_calendar(returns: pd.DataFrame) -> pd.DataFrame:
     aligned.index.name = "date"
     return aligned
 
+def compute_rolling_correlations(returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcule la corrélation glissante (fenetre de 30 jours) entre chaque
+    paire d'actifs. Résultat au format long : une ligne par date et par
+    paire d'actifs, plus facile a stocker et à requeter qu'une matrice
+    par date.
+    """
+    tickers = returns.columns.tolist()
+    records = []
+
+    for i, ticker_a in enumerate(tickers):
+        for ticker_b in tickers[i + 1:]:
+            rolling_corr = returns[ticker_a].rolling(CORRELATION_WINDOW).corr(returns[ticker_b])
+            for date, value in rolling_corr.items():
+                if pd.notna(value):
+                    records.append({
+                        "date": date,
+                        "asset_1": ticker_a,
+                        "asset_2": ticker_b,
+                        "correlation_30d": value,
+                    })
+
+    return pd.DataFrame(records)
+
 if __name__ == "__main__":
     df = load_all_returns()
     df = align_calendar(df)
-    print(df)
+    corr = compute_rolling_correlations(df)
+    print(corr.tail(20))
