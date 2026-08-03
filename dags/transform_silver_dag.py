@@ -9,6 +9,8 @@ from datetime import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+
 sys.path.append("/opt/airflow")
 from src.transform import run_transformation  # noqa: E402
 
@@ -32,3 +34,10 @@ with DAG(
         task_id="transform_all_tickers",
         python_callable=run_transformation,
     )
+
+    trigger_gold = TriggerDagRunOperator(
+        task_id="trigger_gold_aggregation",
+        trigger_dag_id="aggregate_gold_daily",
+    )
+
+    transform_task >> trigger_gold
