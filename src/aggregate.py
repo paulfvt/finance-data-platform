@@ -6,12 +6,18 @@ a partir des donnees Silver.
 import sys
 from pathlib import Path
 
+import logging
 import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config.tickers import TICKERS  # noqa: E402
 
 SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+GOLD_DIR = Path(__file__).resolve().parent.parent / "data" / "gold"
 
 CORRELATION_WINDOW = 30
 
@@ -71,8 +77,23 @@ def compute_rolling_correlations(returns: pd.DataFrame) -> pd.DataFrame:
 
     return pd.DataFrame(records)
 
+def save_gold(df: pd.DataFrame, name: str) -> str:
+    GOLD_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = GOLD_DIR / f"{name}.parquet"
+    df.to_parquet(out_path, index=False)
+    logger.info("Gold sauvegardé : %s (%d lignes)", out_path, len(df))
+    return str(out_path)
+
+
+def run_aggregation() -> str:
+    """Point d'entrée principal : calcule et sauvegarde les corrélations glissantes."""
+    returns = load_all_returns()
+    aligned = align_calendar(returns)
+    correlations = compute_rolling_correlations(aligned)
+    path = save_gold(correlations, "correlations_30d")
+    logger.info("Agrégation Gold terminée.")
+    return path
+
+
 if __name__ == "__main__":
-    df = load_all_returns()
-    df = align_calendar(df)
-    corr = compute_rolling_correlations(df)
-    print(corr.tail(20))
+    run_aggregation()
