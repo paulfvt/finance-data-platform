@@ -14,3 +14,4 @@ airflow.cfg
 .vscode/
 .DS_Store
 .env
+trigger_log.txt
