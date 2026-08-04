@@ -23,6 +23,7 @@ Le pipeline suit une architecture médaillon Bronze / Silver / Gold, standard en
 | **Gold** | Agrégation analytique | Alignement calendaire multi-marchés, corrélations glissantes 30 jours entre chaque paire d'actifs |
 
 Flux de données :
+````text
 [APIs de marché] ──▶ [BRONZE : ingestion brute, Parquet]
                            │
                            ▼
@@ -33,6 +34,7 @@ Flux de données :
                            │
                            ▼
                   [Dashboard Streamlit]
+````
 
 * **Bronze** conserve les données telles que renvoyées par l'API, sans altération, en accumulant à chaque run une fenêtre glissante de quelques jours — garantissant qu'on puisse toujours revenir à la source si une étape de traitement doit être revue.
 * **Silver** ne se contente pas de nettoyer un run isolé : elle reconstitue l'**historique complet** en agrégeant tous les fichiers Bronze accumulés au fil des exécutions, seule façon de calculer des moyennes mobiles ou une volatilité qui aient un sens.
@@ -100,7 +102,7 @@ Un dashboard **Streamlit** consomme les trois couches :
 ---
 
 ## 📁 Structure du Projet
-
+````text
 finance-data-platform/
 ├── config/                 # configuration (tickers suivis)
 ├── dags/                   # DAGs Airflow (extract_bronze, transform_silver, aggregate_gold)
@@ -111,7 +113,7 @@ finance-data-platform/
 ├── docker-compose.yml
 ├── trigger_pipeline.ps1    # script de déclenchement (tâche planifiée Windows)
 └── task_backup.xml         # configuration de référence de la tâche planifiée
-
+````
 ---
 
 ## 🚀 Lancement Rapide
