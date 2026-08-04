@@ -39,12 +39,21 @@ def fetch_ticker(ticker_symbol: str, lookback_days: int = 5):
 
     raise RuntimeError(f"Echec de l'extraction pour {ticker_symbol} apres {MAX_RETRIES} tentatives") from last_error
 
-def save_bronze(df, ticker_name: str, run_date: date) -> Path:
-    """Sauvegarde le DataFrame brut en Parquet, partitionne par date d'execution."""
+def save_bronze(df: pd.DataFrame, ticker_name: str, run_date: date) -> Path:
+    """
+    Sauvegarde le DataFrame brut en Parquet, partitionné par date d'exécution.
+    Écriture atomique (fichier temporaire puis renommage) pour éviter la
+    corruption si plusieurs exécutions du pipeline se chevauchent (le
+    déclenchement à chaque déverrouillage peut produire des runs rapprochés).
+    """
     out_dir = DATA_DIR / run_date.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{ticker_name}.parquet"
-    df.to_parquet(out_path, index=False)
+    tmp_path = out_dir / f"{ticker_name}.parquet.tmp"
+
+    df.to_parquet(tmp_path, index=False)
+    tmp_path.replace(out_path)
+
     logger.info("Sauvegarde : %s (%d lignes)", out_path, len(df))
     return out_path
 
