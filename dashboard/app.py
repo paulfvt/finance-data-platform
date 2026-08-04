@@ -37,3 +37,25 @@ fig = px.line(
     labels={"value": "Prix", "date": "Date", "variable": "Série"},
 )
 st.plotly_chart(fig, use_container_width=True)
+
+st.header(f"Rendements et volatilité — {selected_ticker}")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    fig_returns = px.bar(
+        df,
+        x="date",
+        y="daily_return",
+        labels={"daily_return": "Rendement journalier", "date": "Date"},
+    )
+    st.plotly_chart(fig_returns, use_container_width=True)
+
+with col2:
+    fig_vol = px.line(
+        df,
+        x="date",
+        y="volatility_20d",
+        labels={"volatility_20d": "Volatilité glissante (20j)", "date": "Date"},
+    )
+    st.plotly_chart(fig_vol, use_container_width=True)
