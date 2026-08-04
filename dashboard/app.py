@@ -13,6 +13,7 @@ import streamlit as st
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config.tickers import TICKERS  # noqa: E402
 
+BRONZE_DIR = Path(__file__).resolve().parent.parent / "data" / "bronze"
 SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
 
 st.set_page_config(page_title="Finance Data Platform", layout="wide")
@@ -103,3 +104,20 @@ else:
     )
     st.plotly_chart(fig_heatmap, use_container_width=True)
     st.caption(f"Dernière mise à jour : {latest_date.date()}")
+
+    with st.expander("Données brutes (Bronze) — debug/transparence"):
+    st.caption(
+        "Cette section n'est pas destinée à l'analyse : elle montre les données "
+        "telles qu'extraites, avant tout nettoyage, pour vérifier que le pipeline "
+        "d'ingestion fonctionne correctement."
+    )
+    bronze_dates = sorted([d.name for d in BRONZE_DIR.iterdir() if d.is_dir()], reverse=True)
+    if bronze_dates:
+        selected_date = st.selectbox("Date d'extraction", options=bronze_dates)
+        bronze_path = BRONZE_DIR / selected_date / f"{selected_ticker}.parquet"
+        if bronze_path.exists():
+            st.dataframe(pd.read_parquet(bronze_path))
+        else:
+            st.warning(f"Pas de donnée Bronze pour {selected_ticker} à cette date.")
+    else:
+        st.warning("Aucune donnée Bronze disponible.")
