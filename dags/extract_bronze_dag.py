@@ -24,6 +24,7 @@ with DAG(
     schedule=None,
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    max_active_runs=1,
     tags=["bronze", "extraction"],
 ) as dag:
 
