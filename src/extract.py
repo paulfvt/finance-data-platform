@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 import logging
 import sys
+import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
