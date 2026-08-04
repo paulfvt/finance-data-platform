@@ -15,6 +15,7 @@ from config.tickers import TICKERS  # noqa: E402
 
 BRONZE_DIR = Path(__file__).resolve().parent.parent / "data" / "bronze"
 SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
+GOLD_DIR = Path(__file__).resolve().parent.parent / "data" / "gold"
 
 st.set_page_config(page_title="Finance Data Platform", layout="wide")
 st.title("Finance Data Platform")
@@ -23,6 +24,14 @@ st.title("Finance Data Platform")
 @st.cache_data
 def load_silver(ticker_name: str) -> pd.DataFrame:
     return pd.read_parquet(SILVER_DIR / f"{ticker_name}.parquet")
+
+
+@st.cache_data
+def load_gold_correlations() -> pd.DataFrame:
+    path = GOLD_DIR / "correlations_30d.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
 
 
 st.sidebar.header("Sélection")
@@ -61,17 +70,6 @@ with col2:
     )
     st.plotly_chart(fig_vol, use_container_width=True)
 
-    GOLD_DIR = Path(__file__).resolve().parent.parent / "data" / "gold"
-
-
-@st.cache_data
-def load_gold_correlations() -> pd.DataFrame:
-    path = GOLD_DIR / "correlations_30d.parquet"
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(path)
-
-
 st.header("Corrélations entre actifs (fenêtre glissante 30 jours)")
 
 gold_df = load_gold_correlations()
@@ -105,7 +103,7 @@ else:
     st.plotly_chart(fig_heatmap, use_container_width=True)
     st.caption(f"Dernière mise à jour : {latest_date.date()}")
 
-    with st.expander("Données brutes (Bronze) — debug/transparence"):
+with st.expander("Données brutes (Bronze) — debug/transparence"):
     st.caption(
         "Cette section n'est pas destinée à l'analyse : elle montre les données "
         "telles qu'extraites, avant tout nettoyage, pour vérifier que le pipeline "
