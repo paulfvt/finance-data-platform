@@ -9,6 +9,9 @@ from pathlib import Path
 import logging
 import pandas as pd
 
+import shutil
+import tempfile
+
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config.tickers import TICKERS  # noqa: E402
 
@@ -80,7 +83,13 @@ def compute_rolling_correlations(returns: pd.DataFrame) -> pd.DataFrame:
 def save_gold(df: pd.DataFrame, name: str) -> str:
     GOLD_DIR.mkdir(parents=True, exist_ok=True)
     out_path = GOLD_DIR / f"{name}.parquet"
-    df.to_parquet(out_path, index=False)
+
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+        tmp_local_path = Path(tmp.name)
+
+    df.to_parquet(tmp_local_path, index=False)
+    shutil.move(str(tmp_local_path), str(out_path))
+
     logger.info("Gold sauvegardé : %s (%d lignes)", out_path, len(df))
     return str(out_path)
 
