@@ -59,9 +59,11 @@ Le pipeline est orchestré par **Apache Airflow**, avec un enchaînement automat
 
 **Un choix d'orchestration adapté à une contrainte réelle** : les DAGs n'ont pas de planning cron fixe (`schedule=None`). Le poste de travail n'étant pas allumé en permanence — usage en veille/déverrouillage plutôt que serveur 24/7 — un cron à heure fixe n'aurait aucun sens. L'extraction est déclenchée par une tâche planifiée Windows sur l'événement de **déverrouillage de session** (`SessionStateChangeTrigger`), plus représentatif de l'usage réel qu'une simple ouverture de session.
 
-**Robustesse face aux déclenchements multiples** : un poste déverrouillé plusieurs fois par jour peut produire des runs rapprochés. Deux protections complémentaires :
-* `max_active_runs=1` sur le DAG Bronze, pour empêcher deux exécutions concurrentes.
-* **Écriture atomique** (fichier temporaire + renommage) sur chaque couche, après avoir identifié en conditions réelles une race condition ayant corrompu plusieurs fichiers Parquet lors d'écritures concurrentes.
+**Robustesse face aux déclenchements multiples** : un poste déverrouillé plusieurs fois par jour peut produire des runs rapprochés. Deux protections mises en place :
+* `max_active_runs=1` sur le DAG Bronze, pour empêcher deux exécutions concurrentes du même DAG.
+* **Écriture via fichier temporaire local au conteneur** (module `tempfile`) avant déplacement final vers le volume partagé, plutôt qu'une écriture directe sur le volume monté depuis Windows — l'atomicité du renommage de fichier n'étant pas garantie sur ce type de montage.
+
+**Cohérence des dépendances entre environnements** : une divergence de version de `pyarrow` entre le conteneur (Linux, installé via `requirements.txt`) et la machine locale (Windows) a provoqué une corruption silencieuse des fichiers Parquet — les métadonnées écrites par une version n'étaient pas relisibles par l'autre, entraînant des erreurs `Repetition level histogram size mismatch` à la lecture. Diagnostiqué en comparant explicitement les versions installées de part et d'autre, puis résolu en épinglant une version exacte (`pyarrow==19.0.0`) dans `requirements.txt`, garantissant que conteneur et environnement local utilisent strictement la même version.
 
 Le pipeline est **idempotent** : des déclenchements multiples dans la même journée ne dupliquent jamais de données, grâce à la déduplication systématique en Silver.
 
@@ -119,13 +121,16 @@ finance-data-platform/
 ## 🚀 Lancement Rapide
 
 1. Cloner le dépôt :
-   git clone https://github.com/ton-username/finance-data-platform.git
+   ```
+   git clone https://github.com/paulfvt/finance-data-platform.git
    cd finance-data-platform
 
 2. Démarrer Airflow avec Docker :
-   docker-compose up -d
+   ```
+   docker compose up -d
 
 3. Lancer le dashboard Streamlit :
+   ```
    pip install -r requirements.txt
    streamlit run dashboard/app.py
 
