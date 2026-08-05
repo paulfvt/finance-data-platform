@@ -6,7 +6,8 @@ Couche Silver, nettoyage, alignement calendaire et calcul de metriques
 import ast
 import sys
 from pathlib import Path
-
+import shutil
+import tempfile
 import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -101,17 +102,23 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def save_silver(df: pd.DataFrame, ticker_name: str) -> Path:
+def save_silver(df: pd.DataFrame, ticker_name: str) -> str:
     """
-    Sauvegarde l'historique Silver complet d'un ticker. Pas partitionné
-    par date comme Bronze : c'est une table d'historique unique,
-    régénérée à chaque run à partir de tout l'historique Bronze.
+    Sauvegarde l'historique Silver complet d'un ticker. Écriture via
+    fichier temporaire local au conteneur, pour garantir une écriture
+    atomique fiable même sur un volume monté depuis Windows.
     """
     SILVER_DIR.mkdir(parents=True, exist_ok=True)
     out_path = SILVER_DIR / f"{ticker_name}.parquet"
-    df.to_parquet(out_path, index=False)
+
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+        tmp_local_path = Path(tmp.name)
+
+    df.to_parquet(tmp_local_path, index=False)
+    shutil.move(str(tmp_local_path), str(out_path))
+
     logger.info("Silver sauvegardé : %s (%d lignes)", out_path, len(df))
-    return out_path
+    return str(out_path)
 
 
 def run_transformation() -> list[Path]:
