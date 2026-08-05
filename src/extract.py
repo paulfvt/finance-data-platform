@@ -7,6 +7,8 @@ from pathlib import Path
 import logging
 import sys
 import pandas as pd
+import shutil
+import tempfile
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -43,17 +45,19 @@ def fetch_ticker(ticker_symbol: str, lookback_days: int = 5):
 def save_bronze(df: pd.DataFrame, ticker_name: str, run_date: date) -> Path:
     """
     Sauvegarde le DataFrame brut en Parquet, partitionné par date d'exécution.
-    Écriture atomique (fichier temporaire puis renommage) pour éviter la
-    corruption si plusieurs exécutions du pipeline se chevauchent (le
-    déclenchement à chaque déverrouillage peut produire des runs rapprochés).
+    Écriture d'abord dans un répertoire temporaire local au conteneur (véritable
+    filesystem Linux, contrairement au volume monté Windows où l'atomicité du
+    rename n'est pas garantie), puis copie finale vers le volume partagé.
     """
     out_dir = DATA_DIR / run_date.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{ticker_name}.parquet"
-    tmp_path = out_dir / f"{ticker_name}.parquet.tmp"
 
-    df.to_parquet(tmp_path, index=False)
-    tmp_path.replace(out_path)
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+        tmp_local_path = Path(tmp.name)
+
+    df.to_parquet(tmp_local_path, index=False)
+    shutil.move(str(tmp_local_path), str(out_path))
 
     logger.info("Sauvegarde : %s (%d lignes)", out_path, len(df))
     return out_path
