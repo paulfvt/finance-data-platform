@@ -13,6 +13,8 @@ import streamlit as st
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config.tickers import TICKERS  # noqa: E402
 
+kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+
 BRONZE_DIR = Path(__file__).resolve().parent.parent / "data" / "bronze"
 SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
 GOLD_DIR = Path(__file__).resolve().parent.parent / "data" / "gold"
@@ -158,3 +160,13 @@ with st.expander("Données brutes (Bronze) — debug/transparence"):
             st.warning(f"Pas de donnée Bronze pour {selected_ticker} à cette date.")
     else:
         st.warning("Aucune donnée Bronze disponible.")
+
+        kpi1.metric(
+    "Dernier cours",
+    f"{kpis['last_close']:,.2f}",
+    f"{kpis['daily_change_pct']:+.2f}%",
+)
+kpi2.metric("Volatilité 20j", f"{kpis['volatility_20d']:.4f}" if kpis["volatility_20d"] else "N/A")
+kpi3.metric("Plus haut (période)", f"{kpis['period_high']:,.2f}")
+kpi4.metric("Plus bas (période)", f"{kpis['period_low']:,.2f}")
+kpi5.metric("Tendance", kpis["trend"])
