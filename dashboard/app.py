@@ -273,3 +273,24 @@ st.caption(
     "leur performance relative indépendamment de leur prix réel. Au-dessus de 100 : gain "
     "depuis le début de la période ; en dessous : perte."
 )
+
+st.header("📰 Actualités récentes")
+
+@st.cache_data(ttl=1800)  # rafraîchi toutes les 30 minutes
+def load_news(ticker_symbol: str) -> list:
+    import yfinance as yf
+    try:
+        return yf.Ticker(ticker_symbol).news[:5]
+    except Exception:
+        return []
+
+news_items = load_news(TICKERS[selected_ticker])
+
+if news_items:
+    for item in news_items:
+        title = item.get("title", "Sans titre")
+        link = item.get("link", "#")
+        publisher = item.get("publisher", "")
+        st.markdown(f"**[{title}]({link})** — *{publisher}*")
+else:
+    st.info("Aucune actualité disponible pour cet actif pour le moment.")
