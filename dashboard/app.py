@@ -245,3 +245,31 @@ with st.expander("Données brutes (Bronze) — debug/transparence"):
             st.warning(f"Pas de donnée Bronze pour {selected_ticker} à cette date.")
     else:
         st.warning("Aucune donnée Bronze disponible.")
+
+        st.subheader("Performance comparée (base 100)")
+
+comparison_frames = []
+for t_name in TICKERS:
+    if t_name == "vix":
+        continue  # le VIX n'est pas un actif "investissable", on l'exclut de la comparaison
+    t_df = load_silver(t_name).tail(period_days).copy()
+    t_df["performance_base_100"] = (t_df["close"] / t_df["close"].iloc[0]) * 100
+    t_df["Actif"] = TICKER_LABELS.get(t_name, t_name)
+    comparison_frames.append(t_df[["date", "performance_base_100", "Actif"]])
+
+comparison_df = pd.concat(comparison_frames, ignore_index=True)
+
+fig_comparison = px.line(
+    comparison_df,
+    x="date",
+    y="performance_base_100",
+    color="Actif",
+    labels={"performance_base_100": "Performance (base 100)", "date": "Date"},
+)
+fig_comparison.add_hline(y=100, line_dash="dot", line_color="gray")
+st.plotly_chart(fig_comparison, use_container_width=True)
+st.caption(
+    "Tous les actifs sont ramenés à une base 100 au début de la période, pour comparer "
+    "leur performance relative indépendamment de leur prix réel. Au-dessus de 100 : gain "
+    "depuis le début de la période ; en dessous : perte."
+)
