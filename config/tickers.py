@@ -7,4 +7,5 @@ TICKERS = {
     "us10y": "^TNX",         # Taux US 10 ans
     "bitcoin": "BTC-USD",    # Crypto BTC
     "ethereum": "ETH-USD",   # Crypto ETH
+    "vix": "^VIX",
 }
