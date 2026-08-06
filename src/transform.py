@@ -115,7 +115,8 @@ def save_silver(df: pd.DataFrame, ticker_name: str) -> str:
         tmp_local_path = Path(tmp.name)
 
     df.to_parquet(tmp_local_path, index=False)
-    shutil.move(str(tmp_local_path), str(out_path))
+    shutil.copyfile(str(tmp_local_path), str(out_path))
+    tmp_local_path.unlink()
 
     logger.info("Silver sauvegardé : %s (%d lignes)", out_path, len(df))
     return str(out_path)

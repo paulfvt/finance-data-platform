@@ -57,7 +57,8 @@ def save_bronze(df: pd.DataFrame, ticker_name: str, run_date: date) -> Path:
         tmp_local_path = Path(tmp.name)
 
     df.to_parquet(tmp_local_path, index=False)
-    shutil.move(str(tmp_local_path), str(out_path))
+    shutil.copyfile(str(tmp_local_path), str(out_path))
+    tmp_local_path.unlink()
 
     logger.info("Sauvegarde : %s (%d lignes)", out_path, len(df))
     return out_path
