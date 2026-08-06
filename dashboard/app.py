@@ -17,13 +17,88 @@ BRONZE_DIR = Path(__file__).resolve().parent.parent / "data" / "bronze"
 SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
 GOLD_DIR = Path(__file__).resolve().parent.parent / "data" / "gold"
 
-st.set_page_config(page_title="Finance Data Platform", layout="wide")
-st.title("Finance Data Platform")
+TICKER_LABELS = {
+    "sp500": "S&P 500",
+    "stoxx50": "EuroStoxx 50",
+    "gold": "Or",
+    "oil": "Pétrole",
+    "us10y": "Taux US 10 ans",
+    "bitcoin": "Bitcoin",
+    "ethereum": "Ethereum",
+}
+
+st.set_page_config(page_title="Finance Data Platform", page_icon="📈", layout="wide")
+st.title("📈 Finance Data Platform")
 
 
 @st.cache_data
 def load_silver(ticker_name: str) -> pd.DataFrame:
     return pd.read_parquet(SILVER_DIR / f"{ticker_name}.parquet")
+
+
+def compute_kpis(df: pd.DataFrame) -> dict:
+    """Calcule les indicateurs clés à afficher pour un actif donné."""
+    latest = df.iloc[-1]
+    previous = df.iloc[-2] if len(df) > 1 else latest
+
+    daily_change_pct = ((latest["close"] - previous["close"]) / previous["close"]) * 100
+    trend = "Haussière" if latest["close"] > latest.get("ma_20", latest["close"]) else "Baissière"
+
+    return {
+        "last_close": latest["close"],
+        "daily_change_pct": daily_change_pct,
+        "volatility_20d": latest.get("volatility_20d"),
+        "period_high": df["close"].max(),
+        "period_low": df["close"].min(),
+        "trend": trend,
+    }
+
+
+st.sidebar.header("Sélection")
+selected_ticker = st.sidebar.selectbox(
+    "Actif",
+    options=list(TICKERS.keys()),
+    format_func=lambda t: TICKER_LABELS.get(t, t),
+)
+period_days = st.sidebar.slider("Période affichée (jours)", min_value=5, max_value=90, value=30)
+
+df = load_silver(selected_ticker)
+df_period = df.tail(period_days)
+kpis = compute_kpis(df_period)
+
+st.header(f"Évolution du prix — {TICKER_LABELS.get(selected_ticker, selected_ticker)}")
+
+fig = px.line(
+    df_period,
+    x="date",
+    y=["close", "ma_20", "ma_50"],
+    labels={"value": "Prix", "date": "Date", "variable": "Série"},
+)
+st.plotly_chart(fig, use_container_width=True)
+
+st.header(f"Rendements et volatilité — {TICKER_LABELS.get(selected_ticker, selected_ticker)}")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    fig_returns = px.bar(
+        df_period,
+        x="date",
+        y="daily_return",
+        labels={"daily_return": "Rendement journalier", "date": "Date"},
+    )
+    st.plotly_chart(fig_returns, use_container_width=True)
+
+with col2:
+    fig_vol = px.line(
+        df_period,
+        x="date",
+        y="volatility_20d",
+        labels={"volatility_20d": "Volatilité glissante (20j)", "date": "Date"},
+    )
+    st.plotly_chart(fig_vol, use_container_width=True)
+
+GOLD_DIR = Path(__file__).resolve().parent.parent / "data" / "gold"
 
 
 @st.cache_data
@@ -33,42 +108,6 @@ def load_gold_correlations() -> pd.DataFrame:
         return pd.DataFrame()
     return pd.read_parquet(path)
 
-
-st.sidebar.header("Sélection")
-selected_ticker = st.sidebar.selectbox("Actif", options=list(TICKERS.keys()))
-
-st.header(f"Évolution du prix — {selected_ticker}")
-df = load_silver(selected_ticker)
-
-fig = px.line(
-    df,
-    x="date",
-    y=["close", "ma_20", "ma_50"],
-    labels={"value": "Prix", "date": "Date", "variable": "Série"},
-)
-st.plotly_chart(fig, use_container_width=True)
-
-st.header(f"Rendements et volatilité — {selected_ticker}")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    fig_returns = px.bar(
-        df,
-        x="date",
-        y="daily_return",
-        labels={"daily_return": "Rendement journalier", "date": "Date"},
-    )
-    st.plotly_chart(fig_returns, use_container_width=True)
-
-with col2:
-    fig_vol = px.line(
-        df,
-        x="date",
-        y="volatility_20d",
-        labels={"volatility_20d": "Volatilité glissante (20j)", "date": "Date"},
-    )
-    st.plotly_chart(fig_vol, use_container_width=True)
 
 st.header("Corrélations entre actifs (fenêtre glissante 30 jours)")
 
