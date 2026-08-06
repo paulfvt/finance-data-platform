@@ -108,6 +108,43 @@ kpi3.metric("Plus haut (période)", f"{kpis['period_high']:,.2f}")
 kpi4.metric("Plus bas (période)", f"{kpis['period_low']:,.2f}")
 kpi5.metric("Tendance", kpis["trend"])
 
+st.subheader("🌡️ Baromètre de la peur (VIX)")
+
+vix_df = load_silver("vix")
+vix_latest = vix_df.iloc[-1]["close"]
+
+if vix_latest < 15:
+    vix_zone, vix_color = "Calme", "#2ECC71"
+elif vix_latest < 25:
+    vix_zone, vix_color = "Normal", "#F1C40F"
+elif vix_latest < 35:
+    vix_zone, vix_color = "Tension", "#E67E22"
+else:
+    vix_zone, vix_color = "Panique", "#E74C3C"
+
+fig_vix = go.Figure(go.Indicator(
+    mode="gauge+number",
+    value=vix_latest,
+    number={"suffix": "", "font": {"size": 40}},
+    gauge={
+        "axis": {"range": [0, 50]},
+        "bar": {"color": vix_color},
+        "steps": [
+            {"range": [0, 15], "color": "#1E3D2F"},
+            {"range": [15, 25], "color": "#3D3A1E"},
+            {"range": [25, 35], "color": "#3D2A1E"},
+            {"range": [35, 50], "color": "#3D1E1E"},
+        ],
+    },
+))
+fig_vix.update_layout(height=250, margin=dict(t=30, b=10))
+st.plotly_chart(fig_vix, use_container_width=True)
+st.caption(
+    f"**Zone actuelle : {vix_zone}**. Le VIX mesure la volatilité attendue du S&P 500 — "
+    "plus il est élevé, plus les investisseurs anticipent des mouvements brutaux. "
+    "< 15 : marché calme · 15-25 : normal · 25-35 : nervosité · > 35 : panique."
+)
+
 st.subheader("Évolution du prix")
 
 fig = px.line(
