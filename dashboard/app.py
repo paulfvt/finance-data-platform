@@ -203,3 +203,22 @@ for t_name in TICKERS:
 
 overview_df = pd.DataFrame(overview_rows)
 st.dataframe(overview_df, use_container_width=True, hide_index=True)
+
+fig = px.line(
+    df_period,
+    x="date",
+    y=["close", "ma_20", "ma_50"],
+    labels={"value": "Prix", "date": "Date", "variable": "Série"},
+)
+fig.update_xaxes(
+    rangeselector=dict(
+        buttons=[
+            dict(count=7, label="7j", step="day", stepmode="backward"),
+            dict(count=30, label="30j", step="day", stepmode="backward"),
+            dict(step="all", label="Tout"),
+        ]
+    )
+)
+newnames = {"close": "Cours de clôture", "ma_20": "Moyenne mobile 20j", "ma_50": "Moyenne mobile 50j"}
+fig.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
+st.plotly_chart(fig, use_container_width=True)
