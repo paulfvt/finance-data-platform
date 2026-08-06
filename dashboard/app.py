@@ -170,3 +170,19 @@ kpi2.metric("Volatilité 20j", f"{kpis['volatility_20d']:.4f}" if kpis["volatili
 kpi3.metric("Plus haut (période)", f"{kpis['period_high']:,.2f}")
 kpi4.metric("Plus bas (période)", f"{kpis['period_low']:,.2f}")
 kpi5.metric("Tendance", kpis["trend"])
+
+with col1:
+    df_period = df_period.copy()
+    df_period["color"] = df_period["daily_return"].apply(
+        lambda x: "Positif" if pd.notna(x) and x >= 0 else "Négatif"
+    )
+    fig_returns = px.bar(
+        df_period,
+        x="date",
+        y="daily_return",
+        color="color",
+        color_discrete_map={"Positif": "#2ECC71", "Négatif": "#E74C3C"},
+        labels={"daily_return": "Rendement journalier", "date": "Date", "color": "Sens"},
+    )
+    fig_returns.update_layout(showlegend=False)
+    st.plotly_chart(fig_returns, use_container_width=True)
