@@ -186,3 +186,20 @@ with col1:
     )
     fig_returns.update_layout(showlegend=False)
     st.plotly_chart(fig_returns, use_container_width=True)
+
+    st.subheader("Vue d'ensemble du marché")
+
+overview_rows = []
+for t_name in TICKERS:
+    t_df = load_silver(t_name).tail(period_days)
+    t_kpis = compute_kpis(t_df)
+    overview_rows.append({
+        "Actif": TICKER_LABELS.get(t_name, t_name),
+        "Dernier cours": round(t_kpis["last_close"], 2),
+        "Variation (24h)": f"{t_kpis['daily_change_pct']:+.2f}%",
+        "Volatilité 20j": round(t_kpis["volatility_20d"], 4) if t_kpis["volatility_20d"] else None,
+        "Tendance": t_kpis["trend"],
+    })
+
+overview_df = pd.DataFrame(overview_rows)
+st.dataframe(overview_df, use_container_width=True, hide_index=True)
