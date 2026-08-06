@@ -8,12 +8,11 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from config.tickers import TICKERS  # noqa: E402
-
-kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
 
 BRONZE_DIR = Path(__file__).resolve().parent.parent / "data" / "bronze"
 SILVER_DIR = Path(__file__).resolve().parent.parent / "data" / "silver"
@@ -38,6 +37,14 @@ def load_silver(ticker_name: str) -> pd.DataFrame:
     return pd.read_parquet(SILVER_DIR / f"{ticker_name}.parquet")
 
 
+@st.cache_data
+def load_gold_correlations() -> pd.DataFrame:
+    path = GOLD_DIR / "correlations_30d.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(path)
+
+
 def compute_kpis(df: pd.DataFrame) -> dict:
     """Calcule les indicateurs clés à afficher pour un actif donné."""
     latest = df.iloc[-1]
@@ -56,6 +63,7 @@ def compute_kpis(df: pd.DataFrame) -> dict:
     }
 
 
+# --- Sidebar ---
 st.sidebar.header("Sélection")
 selected_ticker = st.sidebar.selectbox(
     "Actif",
@@ -64,11 +72,43 @@ selected_ticker = st.sidebar.selectbox(
 )
 period_days = st.sidebar.slider("Période affichée (jours)", min_value=5, max_value=90, value=30)
 
+# --- Vue d'ensemble du marché ---
+st.subheader("Vue d'ensemble du marché")
+
+overview_rows = []
+for t_name in TICKERS:
+    t_df = load_silver(t_name).tail(period_days)
+    t_kpis = compute_kpis(t_df)
+    overview_rows.append({
+        "Actif": TICKER_LABELS.get(t_name, t_name),
+        "Dernier cours": round(t_kpis["last_close"], 2),
+        "Variation (24h)": f"{t_kpis['daily_change_pct']:+.2f}%",
+        "Volatilité 20j": round(t_kpis["volatility_20d"], 4) if t_kpis["volatility_20d"] else None,
+        "Tendance": t_kpis["trend"],
+    })
+
+overview_df = pd.DataFrame(overview_rows)
+st.dataframe(overview_df, use_container_width=True, hide_index=True)
+
+# --- Détail de l'actif sélectionné ---
 df = load_silver(selected_ticker)
 df_period = df.tail(period_days)
 kpis = compute_kpis(df_period)
 
-st.header(f"Évolution du prix — {TICKER_LABELS.get(selected_ticker, selected_ticker)}")
+st.header(f"Détail — {TICKER_LABELS.get(selected_ticker, selected_ticker)}")
+
+kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+kpi1.metric(
+    "Dernier cours",
+    f"{kpis['last_close']:,.2f}",
+    f"{kpis['daily_change_pct']:+.2f}%",
+)
+kpi2.metric("Volatilité 20j", f"{kpis['volatility_20d']:.4f}" if kpis["volatility_20d"] else "N/A")
+kpi3.metric("Plus haut (période)", f"{kpis['period_high']:,.2f}")
+kpi4.metric("Plus bas (période)", f"{kpis['period_low']:,.2f}")
+kpi5.metric("Tendance", kpis["trend"])
+
+st.subheader("Évolution du prix")
 
 fig = px.line(
     df_period,
@@ -76,41 +116,48 @@ fig = px.line(
     y=["close", "ma_20", "ma_50"],
     labels={"value": "Prix", "date": "Date", "variable": "Série"},
 )
+fig.update_xaxes(
+    rangeselector=dict(
+        buttons=[
+            dict(count=7, label="7j", step="day", stepmode="backward"),
+            dict(count=30, label="30j", step="day", stepmode="backward"),
+            dict(step="all", label="Tout"),
+        ]
+    )
+)
+newnames = {"close": "Cours de clôture", "ma_20": "Moyenne mobile 20j", "ma_50": "Moyenne mobile 50j"}
+fig.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
 st.plotly_chart(fig, use_container_width=True)
 
-st.header(f"Rendements et volatilité — {TICKER_LABELS.get(selected_ticker, selected_ticker)}")
+st.subheader("Chandelier — Ouverture / Clôture / Plus Haut / Plus Bas")
 
-col1, col2 = st.columns(2)
+fig_candle = go.Figure(
+    data=[
+        go.Candlestick(
+            x=df_period["date"],
+            open=df_period["open"],
+            high=df_period["high"],
+            low=df_period["low"],
+            close=df_period["close"],
+            increasing_line_color="#2ECC71",
+            decreasing_line_color="#E74C3C",
+            name="Prix",
+        )
+    ]
+)
+fig_candle.update_layout(
+    xaxis_title="Date",
+    yaxis_title="Prix",
+    xaxis_rangeslider_visible=False,
+)
+st.plotly_chart(fig_candle, use_container_width=True)
+st.caption(
+    "🟢 Vert : le prix a clôturé plus haut qu'à l'ouverture (journée haussière). "
+    "🔴 Rouge : le prix a clôturé plus bas qu'à l'ouverture (journée baissière). "
+    "Les traits fins montrent le plus haut et le plus bas atteints dans la journée."
+)
 
-with col1:
-    fig_returns = px.bar(
-        df_period,
-        x="date",
-        y="daily_return",
-        labels={"daily_return": "Rendement journalier", "date": "Date"},
-    )
-    st.plotly_chart(fig_returns, use_container_width=True)
-
-with col2:
-    fig_vol = px.line(
-        df_period,
-        x="date",
-        y="volatility_20d",
-        labels={"volatility_20d": "Volatilité glissante (20j)", "date": "Date"},
-    )
-    st.plotly_chart(fig_vol, use_container_width=True)
-
-GOLD_DIR = Path(__file__).resolve().parent.parent / "data" / "gold"
-
-
-@st.cache_data
-def load_gold_correlations() -> pd.DataFrame:
-    path = GOLD_DIR / "correlations_30d.parquet"
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(path)
-
-
+# --- Corrélations (Gold) ---
 st.header("Corrélations entre actifs (fenêtre glissante 30 jours)")
 
 gold_df = load_gold_correlations()
@@ -144,6 +191,7 @@ else:
     st.plotly_chart(fig_heatmap, use_container_width=True)
     st.caption(f"Dernière mise à jour : {latest_date.date()}")
 
+# --- Debug / transparence Bronze ---
 with st.expander("Données brutes (Bronze) — debug/transparence"):
     st.caption(
         "Cette section n'est pas destinée à l'analyse : elle montre les données "
@@ -160,65 +208,3 @@ with st.expander("Données brutes (Bronze) — debug/transparence"):
             st.warning(f"Pas de donnée Bronze pour {selected_ticker} à cette date.")
     else:
         st.warning("Aucune donnée Bronze disponible.")
-
-        kpi1.metric(
-    "Dernier cours",
-    f"{kpis['last_close']:,.2f}",
-    f"{kpis['daily_change_pct']:+.2f}%",
-)
-kpi2.metric("Volatilité 20j", f"{kpis['volatility_20d']:.4f}" if kpis["volatility_20d"] else "N/A")
-kpi3.metric("Plus haut (période)", f"{kpis['period_high']:,.2f}")
-kpi4.metric("Plus bas (période)", f"{kpis['period_low']:,.2f}")
-kpi5.metric("Tendance", kpis["trend"])
-
-with col1:
-    df_period = df_period.copy()
-    df_period["color"] = df_period["daily_return"].apply(
-        lambda x: "Positif" if pd.notna(x) and x >= 0 else "Négatif"
-    )
-    fig_returns = px.bar(
-        df_period,
-        x="date",
-        y="daily_return",
-        color="color",
-        color_discrete_map={"Positif": "#2ECC71", "Négatif": "#E74C3C"},
-        labels={"daily_return": "Rendement journalier", "date": "Date", "color": "Sens"},
-    )
-    fig_returns.update_layout(showlegend=False)
-    st.plotly_chart(fig_returns, use_container_width=True)
-
-    st.subheader("Vue d'ensemble du marché")
-
-overview_rows = []
-for t_name in TICKERS:
-    t_df = load_silver(t_name).tail(period_days)
-    t_kpis = compute_kpis(t_df)
-    overview_rows.append({
-        "Actif": TICKER_LABELS.get(t_name, t_name),
-        "Dernier cours": round(t_kpis["last_close"], 2),
-        "Variation (24h)": f"{t_kpis['daily_change_pct']:+.2f}%",
-        "Volatilité 20j": round(t_kpis["volatility_20d"], 4) if t_kpis["volatility_20d"] else None,
-        "Tendance": t_kpis["trend"],
-    })
-
-overview_df = pd.DataFrame(overview_rows)
-st.dataframe(overview_df, use_container_width=True, hide_index=True)
-
-fig = px.line(
-    df_period,
-    x="date",
-    y=["close", "ma_20", "ma_50"],
-    labels={"value": "Prix", "date": "Date", "variable": "Série"},
-)
-fig.update_xaxes(
-    rangeselector=dict(
-        buttons=[
-            dict(count=7, label="7j", step="day", stepmode="backward"),
-            dict(count=30, label="30j", step="day", stepmode="backward"),
-            dict(step="all", label="Tout"),
-        ]
-    )
-)
-newnames = {"close": "Cours de clôture", "ma_20": "Moyenne mobile 20j", "ma_50": "Moyenne mobile 50j"}
-fig.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
-st.plotly_chart(fig, use_container_width=True)
