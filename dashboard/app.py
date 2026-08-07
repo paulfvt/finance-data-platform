@@ -275,22 +275,37 @@ st.caption(
 )
 
 st.header("📰 Actualités récentes")
-
-@st.cache_data(ttl=1800)  # rafraîchi toutes les 30 minutes
+@st.cache_data(ttl=1800)
 def load_news(ticker_symbol: str) -> list:
     import yfinance as yf
     try:
-        return yf.Ticker(ticker_symbol).news[:5]
+        raw_news = yf.Ticker(ticker_symbol).news[:5]
     except Exception:
         return []
+
+    parsed = []
+    for item in raw_news:
+        content = item.get("content", item)  # fallback si l'ancienne structure existe encore
+        title = content.get("title") or item.get("title")
+        publisher = (
+            content.get("provider", {}).get("displayName")
+            or item.get("publisher")
+        )
+        link = (
+            content.get("canonicalUrl", {}).get("url")
+            or content.get("clickThroughUrl", {}).get("url")
+            or item.get("link")
+        )
+        if title and link:
+            parsed.append({"title": title, "link": link, "publisher": publisher or "Source inconnue"})
+
+    return parsed
+
 
 news_items = load_news(TICKERS[selected_ticker])
 
 if news_items:
     for item in news_items:
-        title = item.get("title", "Sans titre")
-        link = item.get("link", "#")
-        publisher = item.get("publisher", "")
-        st.markdown(f"**[{title}]({link})** — *{publisher}*")
+        st.markdown(f"**[{item['title']}]({item['link']})** — *{item['publisher']}*")
 else:
     st.info("Aucune actualité disponible pour cet actif pour le moment.")
