@@ -11,6 +11,7 @@ import pytest
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from src.transform import flatten_columns  # noqa: E402
 from src.transform import clean_ticker_history  # noqa: E402
+from src.transform import compute_metrics  # noqa: E402
 
 
 def test_flatten_columns_handles_tuple_strings():
@@ -75,3 +76,42 @@ def test_clean_ticker_history_sorts_chronologically():
     result = clean_ticker_history(df)
 
     assert result["date"].is_monotonic_increasing
+
+
+def test_compute_metrics_first_row_has_no_return():
+    """Le premier jour n'a pas de veille : le rendement journalier doit être NaN."""
+    df = pd.DataFrame({
+        "date": pd.to_datetime(["2026-01-01", "2026-01-02"]),
+        "close": [100.0, 105.0],
+    })
+
+    result = compute_metrics(df)
+
+    assert pd.isna(result.iloc[0]["daily_return"])
+    assert not pd.isna(result.iloc[1]["daily_return"])
+
+
+def test_compute_metrics_return_direction_is_correct():
+    """Un prix qui monte doit donner un rendement positif, qui baisse un rendement négatif."""
+    df = pd.DataFrame({
+        "date": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03"]),
+        "close": [100.0, 110.0, 100.0],
+    })
+
+    result = compute_metrics(df)
+
+    assert result.iloc[1]["daily_return"] > 0
+    assert result.iloc[2]["daily_return"] < 0
+
+
+def test_compute_metrics_moving_average_columns_exist():
+    df = pd.DataFrame({
+        "date": pd.to_datetime(["2026-01-01", "2026-01-02"]),
+        "close": [100.0, 105.0],
+    })
+
+    result = compute_metrics(df)
+
+    assert "ma_20" in result.columns
+    assert "ma_50" in result.columns
+    assert "volatility_20d" in result.columns
