@@ -5,10 +5,11 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)
 ![Pandas](https://img.shields.io/badge/Pandas-Data_Processing-150458?style=flat-square&logo=pandas&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-pytest-0A9EDC?style=flat-square&logo=pytest&logoColor=white)
 
 Un projet de data engineering de niveau ING3 (ECE Paris), axé sur l'ingestion, la transformation et l'agrégation de données financières en continu, via une architecture en couches et une orchestration autonome.
 
-Finance Data Platform est un pipeline ETL construit autour de sept actifs représentatifs (actions, matières premières, taux, cryptomonnaies), conçu pour tourner de façon totalement autonome sur un poste de travail personnel — sans dépendre d'un serveur toujours allumé. Le système extrait quotidiennement les cours de marché, les nettoie et les enrichit, puis calcule des indicateurs de risque et de corrélation inter-actifs, restitués dans un dashboard interactif.
+Finance Data Platform est un pipeline ETL construit autour de huit actifs représentatifs (actions, matières premières, taux, cryptomonnaies, indicateur de volatilité), conçu pour tourner de façon totalement autonome sur un poste de travail personnel — sans dépendre d'un serveur toujours allumé. Le système extrait quotidiennement les cours de marché, les nettoie et les enrichit, puis calcule des indicateurs de risque et de corrélation inter-actifs, restitués dans un dashboard interactif de niveau trading.
 
 ---
 
@@ -23,18 +24,17 @@ Le pipeline suit une architecture médaillon Bronze / Silver / Gold, standard en
 | **Gold** | Agrégation analytique | Alignement calendaire multi-marchés, corrélations glissantes 30 jours entre chaque paire d'actifs |
 
 Flux de données :
-````text
-[APIs de marché] ──▶ [BRONZE : ingestion brute, Parquet]
-                           │
-                           ▼
-                  [SILVER : nettoyage, alignement calendaire, rendements, moyennes mobiles]
-                           │
-                           ▼
-                  [GOLD : corrélations glissantes 30j, agrégats entre actifs]
-                           │
-                           ▼
-                  [Dashboard Streamlit]
-````
+
+    [APIs de marché] ──▶ [BRONZE : ingestion brute, Parquet]
+                               │
+                               ▼
+                      [SILVER : nettoyage, alignement calendaire, rendements, moyennes mobiles]
+                               │
+                               ▼
+                      [GOLD : corrélations glissantes 30j, agrégats entre actifs]
+                               │
+                               ▼
+                      [Dashboard Streamlit]
 
 * **Bronze** conserve les données telles que renvoyées par l'API, sans altération, en accumulant à chaque run une fenêtre glissante de quelques jours — garantissant qu'on puisse toujours revenir à la source si une étape de traitement doit être revue.
 * **Silver** ne se contente pas de nettoyer un run isolé : elle reconstitue l'**historique complet** en agrégeant tous les fichiers Bronze accumulés au fil des exécutions, seule façon de calculer des moyennes mobiles ou une volatilité qui aient un sens.
@@ -50,6 +50,7 @@ Un actif par grande classe, pour observer des dynamiques et des corrélations r�
 * **Matières premières** : Or (`GC=F`), Pétrole (`CL=F`)
 * **Taux** : US 10 ans (`^TNX`)
 * **Cryptomonnaies** : Bitcoin (`BTC-USD`), Ethereum (`ETH-USD`)
+* **Sentiment de marché** : VIX (`^VIX`), indice de volatilité implicite du S&P 500, utilisé comme baromètre de la peur
 
 ---
 
@@ -61,7 +62,7 @@ Le pipeline est orchestré par **Apache Airflow**, avec un enchaînement automat
 
 **Robustesse face aux déclenchements multiples** : un poste déverrouillé plusieurs fois par jour peut produire des runs rapprochés. Deux protections mises en place :
 * `max_active_runs=1` sur le DAG Bronze, pour empêcher deux exécutions concurrentes du même DAG.
-* **Écriture via fichier temporaire local au conteneur** (module `tempfile`) avant déplacement final vers le volume partagé, plutôt qu'une écriture directe sur le volume monté depuis Windows — l'atomicité du renommage de fichier n'étant pas garantie sur ce type de montage.
+* **Écriture via fichier temporaire local au conteneur** avant copie finale vers le volume partagé, plutôt qu'une écriture ou un renommage direct sur le volume monté depuis Windows — après avoir constaté que ni l'atomicité du rename ni `shutil.move` ne fonctionnent de façon fiable sur ce type de montage cross-filesystem.
 
 **Cohérence des dépendances entre environnements** : une divergence de version de `pyarrow` entre le conteneur (Linux, installé via `requirements.txt`) et la machine locale (Windows) a provoqué une corruption silencieuse des fichiers Parquet — les métadonnées écrites par une version n'étaient pas relisibles par l'autre, entraînant des erreurs `Repetition level histogram size mismatch` à la lecture. Diagnostiqué en comparant explicitement les versions installées de part et d'autre, puis résolu en épinglant une version exacte (`pyarrow==19.0.0`) dans `requirements.txt`, garantissant que conteneur et environnement local utilisent strictement la même version.
 
@@ -71,11 +72,32 @@ Le pipeline est **idempotent** : des déclenchements multiples dans la même jou
 
 ## 📊 Dashboard
 
-Un dashboard **Streamlit** consomme les trois couches :
-* Évolution du prix et moyennes mobiles (Silver)
-* Rendements journaliers et volatilité glissante (Silver)
-* Heatmap de corrélation inter-actifs (Gold), avec état d'attente géré tant que l'historique est insuffisant
-* Section debug/transparence exposant les données Bronze brutes, pour vérifier visuellement l'intégrité du pipeline d'ingestion
+Un dashboard **Streamlit** conçu pour être lisible par n'importe qui, pas seulement un public technique :
+
+* **Vue d'ensemble du marché** : tableau comparatif de tous les actifs (dernier cours, variation 24h, volatilité, tendance)
+* **Vue thermique (treemap)** : façon Finviz, chaque actif coloré selon sa variation du jour
+* **KPI par actif** : dernier cours, variation, volatilité 20j, plus haut/plus bas sur la période, tendance
+* **Chandelier japonais** : ouverture/clôture/plus haut/plus bas, standard de lecture en finance
+* **Performance comparée (base 100)** : tous les actifs normalisés pour comparer leur performance relative sur la période
+* **Baromètre de la peur (VIX)** : jauge visuelle avec zones (calme/normal/tension/panique)
+* **Corrélation live** : heatmap calculée sur la période sélectionnée, en complément de la version Gold (rolling 30j) qui prend le relais une fois l'historique suffisant
+* **Actualités récentes** : dernières news liées à l'actif sélectionné, via l'API `yfinance`
+* **Section debug/transparence** : données Bronze brutes exposées, pour vérifier visuellement l'intégrité du pipeline d'ingestion
+
+*Point d'attention assumé* : la section actualités effectue un appel réseau direct au moment de l'affichage, hors du pipeline Bronze/Silver/Gold — un compromis pragmatique pour de la fraîcheur d'info, qui casse volontairement la logique "tout est versionné et reproductible" appliquée au reste du projet.
+
+---
+
+## 🧪 Tests
+
+Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeline :
+* Nettoyage et déduplication de l'historique (Silver)
+* Calcul des rendements, moyennes mobiles et volatilité
+* Alignement calendaire multi-marchés (Gold)
+* Calcul des corrélations glissantes
+* **Test de régression sur l'écriture atomique des fichiers Parquet**, ajouté suite à un bug de corruption rencontré en conditions réelles (voir section Orchestration)
+
+    pytest tests/ -v
 
 ---
 
@@ -83,7 +105,7 @@ Un dashboard **Streamlit** consomme les trois couches :
 
 * **Airflow** pour l'orchestration : retries natifs, logs centralisés, dépendances explicites entre couches — préférable à un simple script séquentiel dès que le pipeline gagne en complexité.
 * **Parquet** plutôt que CSV : format colonnaire compressé, qui conserve les types de données.
-* **Pas de Spark** : le volume (7 tickers, historique quotidien) tient largement en mémoire sur une seule machine — Spark ajouterait de la complexité sans bénéfice réel.
+* **Pas de Spark** : le volume (8 tickers, historique quotidien) tient largement en mémoire sur une seule machine — Spark ajouterait de la complexité sans bénéfice réel.
 * **DuckDB envisagé pour une V2** de la couche Gold (requêtes analytiques plus riches) — non implémenté pour l'instant, Pandas/Parquet suffisant au volume actuel.
 * **Docker Compose** pour la reproductibilité : l'ensemble du pipeline (Airflow inclus) se lance en une seule commande, `restart: unless-stopped` pour survivre aux redémarrages du poste.
 
@@ -98,41 +120,48 @@ Un dashboard **Streamlit** consomme les trois couches :
 | Stockage | Parquet |
 | Traitement | Pandas, NumPy |
 | Dashboard | Streamlit, Plotly |
+| Tests | pytest |
 | Conteneurisation | Docker / Docker Compose |
 | Automatisation | Tâche planifiée Windows (déverrouillage de session) |
 
 ---
 
 ## 📁 Structure du Projet
-````text
-finance-data-platform/
-├── config/                 # configuration (tickers suivis)
-├── dags/                   # DAGs Airflow (extract_bronze, transform_silver, aggregate_gold)
-├── src/                    # logique métier (extraction, transformation, agrégation)
-├── dashboard/              # application Streamlit
-├── scripts/                # utilitaires de debug (inspection des sorties par couche)
-├── data/                   # données générées (non versionnées) : bronze/, silver/, gold/
-├── docker-compose.yml
-├── trigger_pipeline.ps1    # script de déclenchement (tâche planifiée Windows)
-└── task_backup.xml         # configuration de référence de la tâche planifiée
-````
+
+    finance-data-platform/
+    ├── config/                 # configuration (tickers suivis)
+    ├── dags/                   # DAGs Airflow (extract_bronze, transform_silver, aggregate_gold)
+    ├── src/                    # logique métier (extraction, transformation, agrégation)
+    ├── dashboard/               # application Streamlit
+    ├── scripts/                 # utilitaires de debug (inspection des sorties par couche)
+    ├── tests/                   # tests unitaires (pytest)
+    ├── data/                    # données générées (non versionnées) : bronze/, silver/, gold/
+    ├── docker-compose.yml
+    ├── pytest.ini
+    ├── trigger_pipeline.ps1     # script de déclenchement (tâche planifiée Windows)
+    └── task_backup.xml          # configuration de référence de la tâche planifiée
+
 ---
 
 ## 🚀 Lancement Rapide
 
 1. Cloner le dépôt :
-   ```
-   git clone https://github.com/paulfvt/finance-data-platform.git
-   cd finance-data-platform
+
+       git clone https://github.com/paulfvt/finance-data-platform.git
+       cd finance-data-platform
 
 2. Démarrer Airflow avec Docker :
-   ```
-   docker compose up -d
+
+       docker compose up -d
 
 3. Lancer le dashboard Streamlit :
-   ```
-   pip install -r requirements.txt
-   streamlit run dashboard/app.py
+
+       pip install -r requirements.txt
+       streamlit run dashboard/app.py
+
+4. Lancer les tests :
+
+       pytest tests/ -v
 
 ---
 *Projet en développement continu — l'historique s'accumule quotidiennement ; la couche Gold devient pleinement significative à partir de 30 jours de données.*
