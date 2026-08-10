@@ -143,6 +143,16 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 
 ---
 
+### Aperçu visuel
+
+**Vue d'ensemble du marché et vue thermique**
+![Vue d'ensemble](docs/screenshots/overview.png)
+
+**Chandelier japonais — détail d'un actif**
+![Chandelier](docs/screenshots/candlestick.png)
+
+---
+
 ## 🚀 Lancement Rapide
 
 1. Cloner le dépôt :
