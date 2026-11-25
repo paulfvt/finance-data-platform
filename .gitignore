@@ -4,6 +4,8 @@ data/silver/*
 !data/silver/.gitkeep
 data/gold/*
 !data/gold/.gitkeep
+data/live/*
+!data/live/.gitkeep
 venv/
 env/
 __pycache__/

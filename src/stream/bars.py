@@ -140,6 +140,17 @@ class BarAggregator:
             closed += self._close_symbol(symbol, watermark)
         return closed
 
+    def mark_closed_until(self, symbol: str, until: datetime) -> None:
+        """
+        Déclare fermées toutes les bougies de `symbol` qui finissent avant `until`.
+        Au redémarrage, l'agrégateur est vide : sans ça, un trade en retard
+        rejoué recréerait une bougie déjà écrite avec un seul trade, et l'upsert
+        écraserait la bonne version.
+        """
+        current = self._closed_until.get(symbol)
+        if current is None or until > current:
+            self._closed_until[symbol] = until
+
     # --- offsets ------------------------------------------------------------
 
     def safe_commit_offsets(self) -> dict[int, int]:

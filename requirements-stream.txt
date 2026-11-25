@@ -1,3 +1,5 @@
 # Dépendances de la couche streaming (image Dockerfile.stream).
 websockets>=13.0
 confluent-kafka>=2.5
+pandas>=2.2
+pyarrow==19.0.0   # même version partout : voir README, section Orchestration

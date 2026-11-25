@@ -1,4 +1,4 @@
-# Image légère des services streaming (producteur, puis consommateur à l'étape 4).
+# Image légère des services streaming (producteur et consommateur).
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \

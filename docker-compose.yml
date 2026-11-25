@@ -132,6 +132,24 @@ services:
       redpanda-init:
         condition: service_completed_successfully
 
+  # Consommateur : crypto.trades -> bougies 1 min -> data/live/bars (Parquet).
+  stream-consumer:
+    image: finance-data-platform-stream:latest
+    container_name: finance_platform_stream_consumer
+    restart: unless-stopped
+    command: ["python", "-m", "src.stream.consumer"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      KAFKA_TOPIC: crypto.trades
+      KAFKA_GROUP_ID: bars-writer
+      ALLOWED_LATENESS_S: "10"
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    depends_on:
+      stream-producer:
+        condition: service_started
+
 volumes:
   postgres_data:
   airflow_logs:
