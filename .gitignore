@@ -19,3 +19,4 @@ airflow.cfg
 .env
 .venv/
 trigger_log.txt
+data/bronze_backup_*/

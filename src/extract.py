@@ -13,6 +13,7 @@ import tempfile
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from config.tickers import TICKERS
+from src.bronze_schema import to_bronze_schema
 import yfinance as yf
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -75,9 +76,8 @@ def fetch_ticker(ticker_symbol: str, lookback_days: int = MIN_LOOKBACK_DAYS):
             df = yf.download(ticker_symbol, start=start.isoformat(), end=end.isoformat(), progress=False)
             if df.empty:
                 raise ValueError(f"Aucune donnee retournee pour {ticker_symbol}")
-            df = df.reset_index()
-            df["ticker"] = ticker_symbol
-            return df
+            # Colonnes au format du contrat Bronze (date, open, high, low, close, volume, ticker)
+            return to_bronze_schema(df, ticker=ticker_symbol)
         except Exception as exc:
             last_error = exc
             logger.warning("Tentative %s/%s echouee pour %s : %s", attempt, MAX_RETRIES, ticker_symbol, exc)
