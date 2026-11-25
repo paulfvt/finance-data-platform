@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: >
+      Couche Bronze écrite par le DAG bronze_extract : un dossier par date de run,
+      un fichier Parquet par actif (data/bronze/AAAA-MM-JJ/<actif>.parquet).
+      Chaque run relit une fenêtre de plusieurs jours, donc un même jour de cotation
+      apparaît dans plusieurs runs.
+    tables:
+      - name: prices
+        description: Cours quotidiens bruts, au format du contrat src/bronze_schema.py.
+        config:
+          meta:
+            external_location: >-
+              read_parquet('{{ env_var("DATA_DIR", "/opt/airflow/data") }}/bronze/*/*.parquet', filename = true, union_by_name = true)
+        columns:
+          - name: date
+            description: Jour de cotation.
+          - name: ticker
+            description: Symbole yfinance (BTC-USD, ^GSPC...).
+          - name: filename
+            description: Chemin du fichier lu, d'où sont tirés la date de run et le nom court de l'actif.

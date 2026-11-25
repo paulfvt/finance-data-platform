@@ -1,0 +1,5 @@
+# dbt, installé dans un environnement virtuel séparé de l'image Airflow (/opt/dbt-venv) :
+# dbt et Airflow épinglent des versions différentes des mêmes dépendances.
+# Versions exactes pour que l'image, la CI et un poste local calculent pareil.
+dbt-core==1.12.7
+dbt-duckdb==1.11.1

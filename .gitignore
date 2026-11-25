@@ -20,3 +20,6 @@ airflow.cfg
 .venv/
 trigger_log.txt
 data/bronze_backup_*/
+dbt/target/
+dbt/logs/
+dbt/.user.yml

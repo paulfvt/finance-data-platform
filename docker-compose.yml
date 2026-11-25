@@ -13,12 +13,18 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-change-me-local-only}
     PYTHONPATH: /opt/airflow
+    DBT_PROFILES_DIR: /opt/airflow/dbt
+    DBT_TARGET_PATH: /tmp/dbt_target
+    DBT_LOG_PATH: /tmp/dbt_logs
+    DATA_DIR: /opt/airflow/data
+    DBT_SEND_ANONYMOUS_USAGE_STATS: "false"   # pas de télémétrie dbt
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/src
     - ./config:/opt/airflow/config
     - ./data:/opt/airflow/data
     - ./tests:/opt/airflow/tests
+    - ./dbt:/opt/airflow/dbt
     - airflow_logs:/opt/airflow/logs
   depends_on:
     postgres:

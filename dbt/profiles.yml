@@ -1,0 +1,10 @@
+# DuckDB en mémoire : aucune base persistante, donc aucun fichier .duckdb verrouillé
+# (DuckDB n'accepte qu'un processus en écriture). Les modèles Silver et Gold sont
+# écrits en Parquet (matérialisation « external »), et c'est ce que lit le dashboard.
+finance_platform:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ":memory:"
+      threads: 2

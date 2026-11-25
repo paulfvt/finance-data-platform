@@ -1,0 +1,21 @@
+name: finance_platform
+version: "2.0.0"
+config-version: 2
+profile: finance_platform
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+# Variables d'environnement lues par dbt (définies dans docker-compose.yml et la CI) :
+# - DATA_DIR : racine des données (/opt/airflow/data dans le conteneur, des fixtures en CI)
+# - DBT_TARGET_PATH, DBT_LOG_PATH : hors du volume monté depuis Windows (écritures nombreuses et lentes)
+clean-targets: ["target", "logs"]
+
+models:
+  finance_platform:
+    staging:
+      # ephemeral : intégré comme sous-requête dans les modèles qui l'utilisent.
+      # Avec DuckDB en mémoire, chaque commande dbt repart d'une base vide : une
+      # vue créée par une commande précédente n'existerait plus.
+      +materialized: ephemeral
