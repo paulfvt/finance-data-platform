@@ -113,6 +113,25 @@ services:
       redpanda:
         condition: service_healthy
 
+  # Producteur : websocket Coinbase -> topic crypto.trades.
+  stream-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.stream
+    image: finance-data-platform-stream:latest
+    container_name: finance_platform_stream_producer
+    restart: unless-stopped
+    command: ["python", "-m", "src.stream.producer"]
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      KAFKA_TOPIC: crypto.trades
+      PRODUCT_IDS: BTC-USD,ETH-USD
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      redpanda-init:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:
   airflow_logs:

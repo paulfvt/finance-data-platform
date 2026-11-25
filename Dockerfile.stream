@@ -1,0 +1,11 @@
+# Image légère des services streaming (producteur, puis consommateur à l'étape 4).
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+COPY requirements-stream.txt .
+RUN pip install --no-cache-dir -r requirements-stream.txt
+
+# Le code (src/) est monté en volume par docker-compose, comme pour Airflow.
