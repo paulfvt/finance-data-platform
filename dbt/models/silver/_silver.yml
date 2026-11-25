@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: silver_daily_prices
+    description: >
+      Historique quotidien nettoyé et enrichi, une ligne par actif et par jour de cotation.
+      Les fenêtres (moyennes mobiles, volatilité) comptent des séances, pas des jours calendaires.
+    columns:
+      - name: ticker_name
+        description: Nom court de l'actif (bitcoin, sp500...), tiré du nom du fichier Bronze.
+      - name: ticker
+        description: Symbole yfinance.
+      - name: price_date
+        description: Jour de cotation.
+      - name: close
+        description: Cours de clôture.
+      - name: daily_return
+        description: Rendement logarithmique par rapport à la séance précédente (NULL pour la première).
+      - name: ma_20
+        description: Moyenne mobile du cours de clôture sur 20 séances (sur moins de séances au début de l'historique).
+      - name: ma_50
+        description: Moyenne mobile du cours de clôture sur 50 séances.
+      - name: volatility_20d
+        description: Écart-type des rendements sur 20 séances, non annualisé, à partir de 2 rendements connus.

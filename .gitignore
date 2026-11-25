@@ -6,6 +6,8 @@ data/gold/*
 !data/gold/.gitkeep
 data/live/*
 !data/live/.gitkeep
+data/dbt/*
+!data/dbt/.gitkeep
 .claude/
 venv/
 env/
