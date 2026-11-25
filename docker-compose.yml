@@ -70,6 +70,50 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # --- Couche streaming (lot 2) ---------------------------------------------
+  # Redpanda : broker compatible avec le protocole Kafka, en un seul binaire
+  # (pas de ZooKeeper ni de JVM). Deux adresses d'écoute : redpanda:9092 pour
+  # les conteneurs, 127.0.0.1:19092 pour les scripts lancés depuis Windows
+  # (pas « localhost » : Windows le résout d'abord en IPv6 ::1, où rien n'écoute).
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.3.1
+    container_name: finance_platform_redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container        # réglages pour un poste de dev (pas de fsync strict, 1 nœud)
+      - --smp=1
+      - --memory=1G
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://127.0.0.1:19092
+    ports:
+      - "127.0.0.1:19092:19092"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 5s
+      retries: 20
+
+  # Tourne une fois au démarrage : crée le topic s'il n'existe pas (idempotent).
+  # 2 partitions, avec le symbole comme clé : tous les trades BTC vont dans la
+  # même partition, ce qui garantit leur ordre. Rétention de 7 jours.
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.3.1
+    container_name: finance_platform_redpanda_init
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >
+        rpk topic describe crypto.trades -X brokers=redpanda:9092 >/dev/null 2>&1
+        || rpk topic create crypto.trades -X brokers=redpanda:9092
+        --partitions 2 --replicas 1 --topic-config retention.ms=604800000
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   airflow_logs:
+  redpanda_data:
