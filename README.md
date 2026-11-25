@@ -256,8 +256,7 @@ Trois niveaux de tests :
     │   └── tests/               # tests singuliers et génériques
     ├── src/                     # extraction Bronze et contrat de schéma
     │   └── stream/              # couche temps réel : producteur, bougies, consommateur, requêtes DuckDB
-    ├── dashboard/               # application Streamlit (page quotidienne)
-    │   └── pages/               # page Live
+    ├── dashboard/               # Streamlit : app.py (navigation), quotidien.py, live.py
     ├── scripts/                 # Bronze synthétique pour la CI, utilitaires de debug
     ├── tests/                   # tests pytest
     ├── data/                    # données générées (non versionnées) : bronze/, silver/, gold/, live/

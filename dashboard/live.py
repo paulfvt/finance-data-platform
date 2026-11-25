@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.stream.live_queries import MIN_OBS, VOL_WINDOW_MIN, live_metrics, live_status  # noqa: E402
 
 LOCAL_TZ = "Europe/Paris"
@@ -24,7 +24,6 @@ SYMBOL_COLORS = {"BTC-USD": "#F7931A", "ETH-USD": "#8C8CFF"}   # orange Bitcoin,
 WINDOWS = {"1 h": 60, "2 h": 120, "6 h": 360}
 FRESH_MIN, STALE_MIN = 2, 10   # au-delà de 2 min de retard : alerte ; au-delà de 10 : flux arrêté
 
-st.set_page_config(page_title="Live — Finance Data Platform", page_icon="⚡", layout="wide")
 st.title("⚡ Live — Bitcoin & Ethereum")
 st.caption(
     "Bougies d'une minute construites en continu à partir de chaque trade Coinbase : "

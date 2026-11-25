@@ -3,6 +3,6 @@ pandas>=2.2
 pyarrow==19.0.0
 duckdb>=1.0
 python-dotenv>=1.0
-streamlit>=1.38
+streamlit>=1.44   # st.navigation et st.fragment
 plotly>=5.24
 pytest>=8.0
