@@ -1,7 +1,9 @@
 # 📈 Finance Data Platform — Pipeline Data Engineering Multi-Actifs, batch et temps réel
 
+[![CI](https://github.com/paulfvt/finance-data-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/paulfvt/finance-data-platform/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Apache Airflow](https://img.shields.io/badge/Apache_Airflow-2.9-017CEE?style=flat-square&logo=apacheairflow&logoColor=white)
+![dbt](https://img.shields.io/badge/dbt-1.12-FF694B?style=flat-square&logo=dbt&logoColor=white)
 ![Redpanda](https://img.shields.io/badge/Redpanda-Kafka_API-E2401B?style=flat-square&logo=apachekafka&logoColor=white)
 ![DuckDB](https://img.shields.io/badge/DuckDB-SQL-FFF000?style=flat-square&logo=duckdb&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
@@ -11,16 +13,17 @@
 
 Un projet de data engineering axé sur l'ingestion, la transformation et l'agrégation de données financières en continu, via une architecture en couches et une orchestration autonome.
 
-Finance Data Platform est un pipeline ETL construit autour de huit actifs représentatifs (actions, matières premières, taux, cryptomonnaies, indicateur de volatilité), conçu pour tourner de façon totalement autonome sur un poste de travail personnel — sans dépendre d'un serveur toujours allumé. Le système extrait quotidiennement les cours de marché, les nettoie et les enrichit, puis calcule des indicateurs de risque et de corrélation inter-actifs, restitués dans un dashboard interactif de niveau trading.
+Finance Data Platform est un pipeline ETL construit autour de huit actifs représentatifs (actions, matières premières, taux, cryptomonnaies, indicateur de volatilité), conçu pour tourner de façon totalement autonome sur un poste de travail personnel — sans dépendre d'un serveur toujours allumé. Le système extrait quotidiennement les cours de marché, les nettoie et les enrichit avec **dbt**, puis calcule des indicateurs de risque et de corrélation inter-actifs, restitués dans un dashboard interactif de niveau trading. Des tests de qualité bloquent toute donnée invalide avant qu'elle n'atteigne le dashboard, et une CI vérifie le tout à chaque push.
 
 À côté de ce batch quotidien, une **couche temps réel** suit chaque trade Bitcoin et Ethereum de Coinbase, le fait transiter par un broker compatible Kafka et le transforme en bougies d'une minute, avec une garantie de livraison testée en provoquant de vrais crashs. Les deux chemins coexistent : c'est une **architecture lambda**.
 
 ```mermaid
 flowchart LR
-    subgraph batch["Batch — Airflow, toutes les heures"]
+    subgraph batch["Batch — Airflow toutes les heures, puis dbt build"]
         YF["yfinance<br/>8 actifs"] --> BR["Bronze<br/>Parquet brut"]
-        BR -->|Dataset| SI["Silver<br/>nettoyage, rendements"]
-        SI -->|Dataset| GO["Gold<br/>corrélations 30 j"]
+        BR -->|Dataset| QC{"Contrôles<br/>d'entrée dbt"}
+        QC -->|OK| SI["Silver<br/>nettoyage, rendements"]
+        SI --> GO["Gold<br/>corrélations 30 j"]
     end
     subgraph stream["Temps réel — en continu"]
         CB["Coinbase<br/>websocket"] --> PR["Producteur<br/>Python"]
@@ -41,26 +44,53 @@ Le pipeline suit une architecture médaillon Bronze / Silver / Gold, standard en
 
 | Couche | Rôle | Opérations |
 |---|---|---|
-| **Bronze** | Ingestion brute | Extraction yfinance, aucune transformation, Parquet partitionné par date |
-| **Silver** | Nettoyage & enrichissement | Déduplication, filtrage des valeurs aberrantes, rendements log, moyennes mobiles (20/50j), volatilité glissante (20j) |
-| **Gold** | Agrégation analytique | Alignement calendaire multi-marchés, corrélations glissantes 30 jours entre chaque paire d'actifs |
+| **Bronze** | Ingestion brute | Extraction yfinance (Python), valeurs non modifiées, colonnes au format d'un contrat de schéma, Parquet partitionné par date de run |
+| **Silver** | Nettoyage & enrichissement (dbt) | Version la plus récente de chaque jour, prix invalides écartés, rendements log, moyennes mobiles (20/50 séances), volatilité glissante (20 séances) |
+| **Gold** | Agrégation analytique (dbt) | Calendrier complet multi-marchés, corrélations glissantes 30 jours entre chaque paire d'actifs |
 
-Flux de données :
+* **Bronze** conserve les valeurs telles que renvoyées par l'API, en accumulant à chaque run une fenêtre glissante de plusieurs jours, ce qui garantit qu'on peut toujours revenir à la source. Seule la **forme** est imposée : yfinance renvoie des colonnes à deux niveaux (`('Close', 'BTC-USD')`) dont le nom change d'un actif à l'autre, ce qui empêchait de réunir les actifs dans une même table SQL. Un contrat (`src/bronze_schema.py`) fixe les noms, l'ordre, les types et l'unité de temps.
+* **Silver** reconstitue l'**historique complet** à partir de tous les runs Bronze, en gardant pour chaque jour la version du run le plus récent : la bougie crypto du jour est encore incomplète lors des premiers runs. Les fenêtres comptent des **séances** (`ROWS`), la convention des marchés.
+* **Gold** gère un problème structurel du sujet : les marchés traditionnels ferment le week-end, la crypto cote en continu. Les séries sont alignées sur un calendrier complet en reprenant le dernier **prix** connu, puis les rendements sont calculés : un samedi donne un rendement nul, le lundi porte tout le mouvement depuis vendredi. Au-delà de 4 jours sans cotation, il s'agit d'un trou de données et rien n'est complété (voir la section dbt).
 
-    [APIs de marché] ──▶ [BRONZE : ingestion brute, Parquet]
-                               │
-                               ▼
-                      [SILVER : nettoyage, alignement calendaire, rendements, moyennes mobiles]
-                               │
-                               ▼
-                      [GOLD : corrélations glissantes 30j, agrégats entre actifs]
-                               │
-                               ▼
-                      [Dashboard Streamlit]
+---
 
-* **Bronze** conserve les données telles que renvoyées par l'API, sans altération, en accumulant à chaque run une fenêtre glissante de quelques jours — garantissant qu'on puisse toujours revenir à la source si une étape de traitement doit être revue.
-* **Silver** ne se contente pas de nettoyer un run isolé : elle reconstitue l'**historique complet** en agrégeant tous les fichiers Bronze accumulés au fil des exécutions, seule façon de calculer des moyennes mobiles ou une volatilité qui aient un sens.
-* **Gold** croise l'ensemble des actifs suivis et gère un problème structurel du sujet : les marchés traditionnels ferment le week-end, la cryptomonnaie trade en continu. Les calendriers sont alignés par forward-fill avant tout calcul de corrélation — une limite assumée et documentée plutôt que masquée.
+## 🧱 Transformations avec dbt
+
+Silver et Gold sont des modèles **dbt** (SQL), exécutés par le DAG `dbt_build` dès qu'une extraction Bronze réussit. Une seule commande, `dbt build`, enchaîne le chargement du référentiel des actifs, les contrôles d'entrée, l'écriture de Silver puis de Gold, et les contrôles de sortie.
+
+| Modèle | Rôle | Matérialisation |
+|---|---|---|
+| `stg_bronze_prices` | Lecture directe des Parquet Bronze, une ligne par actif et par jour (version du run le plus récent) | Vue |
+| `silver_daily_prices` | Rendements, moyennes mobiles, volatilité | Parquet, `data/silver/daily_prices.parquet` |
+| `gold_correlations_30d` | Corrélations glissantes par paire | Parquet, `data/gold/correlations_30d.parquet` |
+| `tickers` (seed) | Référentiel des actifs : classe, ordre des paires. Un test pytest le garde aligné sur `config/tickers.py` | Table |
+
+### Des tests qui bloquent avant d'écrire
+
+Avec dbt, les tests d'un modèle s'exécutent *après* son écriture. Les contrôles qui doivent bloquer sont donc posés **en amont**, sur le staging : si l'un d'eux échoue, dbt saute Silver et Gold, la tâche Airflow passe en échec, et le dashboard garde les dernières données valides (principe *write-audit-publish*).
+
+| Où | Contrôles |
+|---|---|
+| **Entrée** (staging) | unicité (actif, jour), prix strictement positifs, `high ≥ low`, ouverture et clôture dans [low, high], volume ≥ 0 (nul pour un indice ou un taux), actif connu du référentiel |
+| **Fraîcheur** (staging) | la crypto, qui cote tous les jours, a une cotation d'hier au plus tard ; chaque actif a une cotation de moins de 7 jours |
+| **Sortie** (Silver, Gold) | unicité, volatilité positive, rendements finis, corrélation dans [-1, 1], les 28 paires présentes au dernier jour, paires orientées selon le référentiel |
+
+Vérifié en injectant une clôture négative dans une copie de Bronze : deux contrôles d'entrée échouent, Silver et Gold sont sautés, et aucun fichier n'est écrit.
+
+**5 tests unitaires dbt** vérifient en plus la *logique* des modèles sur des données simulées : la dernière version d'un jour l'emporte, les prix invalides sont écartés, la première séance n'a pas de rendement, un week-end donne un rendement mais pas un trou d'un mois, la corrélation exige une fenêtre complète. Ils tournent dans la CI.
+
+### Une migration prouvée équivalente
+
+Silver et Gold étaient calculés en pandas. La migration vers dbt a d'abord reproduit **exactement** les anciens résultats, vérifiés ligne à ligne contre la sortie pandas (597 lignes Silver sur 9 colonnes et 2 527 lignes Gold, écart relatif inférieur à 10⁻⁹, `NULL` aux mêmes endroits). Les corrections de méthode ne sont venues qu'ensuite, chacune dans son propre commit avec ses chiffres avant/après. Mélanger « je migre » et « je corrige » aurait rendu les deux invérifiables.
+
+### Deux biais corrigés après la migration
+
+1. **Le mouvement du vendredi comptait trois fois.** L'ancien code complétait les week-ends en recopiant le dernier *rendement*. Pour les actions, le mouvement du vendredi était donc compté le vendredi, le samedi et le dimanche, ce qui écrasait leurs corrélations avec la crypto. Gold reprend désormais le dernier *prix* : au 25/11, la corrélation S&P 500/Bitcoin passe de 0,26 à 0,53 et Or/Bitcoin de 0,09 à 0,42, tandis que Bitcoin/Ethereum, deux actifs qui cotent tous les jours, ne bouge pas (écart nul sur toutes les paires crypto/crypto).
+2. **Un mois de mouvement présenté comme une séance.** Après la panne d'un mois de la V1, Silver calculait le rendement de la première séance par rapport à la dernière cotation, un mois plus tôt : +20,6 % « en une séance » pour Bitcoin. Au-delà de 4 jours depuis la séance précédente (la plus longue fermeture normale d'un marché), le rendement vaut désormais `NULL`, et Gold ne complète plus les prix. Le pic de volatilité 20 séances de Bitcoin passe de 5,1 % à 2,8 %, et 1 239 corrélations calculées sur des données inventées pendant la panne disparaissent.
+
+Le seuil de 4 jours est une variable du projet dbt (`max_market_closure_days`), partagée par Silver et Gold.
+
+**Limite restante** : les rendements nuls du week-end diluent légèrement les corrélations entre actions et crypto, puisque la crypto bouge le week-end. La méthode la plus rigoureuse consisterait à calculer chaque paire sur leurs seuls jours de cotation communs (rendements synchrones).
 
 ---
 
@@ -118,11 +148,11 @@ Un actif par grande classe, pour observer des dynamiques et des corrélations r�
 
 ## ⚙️ Orchestration & Automatisation
 
-Le pipeline est orchestré par **Apache Airflow** (LocalExecutor, base Postgres), et les trois couches s'enchaînent par **Datasets** : `bronze_extract` publie le Dataset Bronze, ce qui lance `silver_transform`, qui publie le Dataset Silver, ce qui lance `gold_aggregate`. Chaque DAG déclare ce qu'il consomme et ce qu'il produit, sans connaître le suivant.
+Le pipeline est orchestré par **Apache Airflow** (LocalExecutor, base Postgres), et les couches s'enchaînent par **Datasets** : `bronze_extract` publie le Dataset Bronze, ce qui lance `dbt_build`, qui construit et contrôle Silver et Gold. Chaque DAG déclare ce qu'il consomme et ce qu'il produit, sans connaître le suivant. dbt est installé dans un environnement virtuel séparé à l'intérieur de l'image (Airflow et dbt épinglent des versions différentes des mêmes bibliothèques) et appelé en ligne de commande.
 
 **Un poste qui n'est pas un serveur** : le PC n'est pas allumé en permanence. Le DAG Bronze est planifié toutes les heures avec `catchup=False` : quand le PC sort de veille et que le scheduler repart, Airflow lance tout de suite le dernier créneau manqué, un seul. L'extraction calcule ensuite combien de jours relire depuis le dernier run réussi (`compute_lookback_days`), pour combler le trou laissé par la coupure au lieu de le garder pour toujours. Le dossier Bronze du jour est volontairement ignoré dans ce calcul : chaque run du jour le réécrit, et le prendre en compte faisait écraser le rattrapage du premier run par la petite fenêtre du deuxième (bug constaté et couvert par un test).
 
-**Pourquoi la V1 a été abandonnée** : la V1 déclenchait l'extraction par une tâche planifiée Windows, au déverrouillage de session. En pratique, sur 359 déclenchements, **320 ont échoué** parce que le moteur Docker n'était pas joignable au moment du déverrouillage, et l'erreur n'apparaissait que dans un fichier de log local. En plus, une fenêtre PowerShell s'ouvrait à chaque fois. La V2 confie la planification à l'outil fait pour ça et rend les échecs visibles : une extraction ou une transformation partiellement en échec fait maintenant échouer la tâche Airflow (avec retries) au lieu d'afficher un run vert.
+**Pourquoi la V1 a été abandonnée** : la V1 déclenchait l'extraction par une tâche planifiée Windows, au déverrouillage de session. En pratique, sur 359 déclenchements, **320 ont échoué** parce que le moteur Docker n'était pas joignable au moment du déverrouillage, et l'erreur n'apparaissait que dans un fichier de log local. En plus, une fenêtre PowerShell s'ouvrait à chaque fois. La V2 confie la planification à l'outil fait pour ça et rend les échecs visibles : une extraction partiellement en échec, ou un contrôle dbt qui ne passe pas, fait échouer la tâche Airflow (avec retries) au lieu d'afficher un run vert.
 
 **Robustesse face aux runs rapprochés** :
 * `max_active_runs=1` sur chaque DAG, pour empêcher deux exécutions concurrentes.
@@ -130,7 +160,7 @@ Le pipeline est orchestré par **Apache Airflow** (LocalExecutor, base Postgres)
 
 **Cohérence des dépendances entre environnements** : une divergence de version de `pyarrow` entre le conteneur (Linux, installé via `requirements.txt`) et la machine locale (Windows) a provoqué une corruption silencieuse des fichiers Parquet — les métadonnées écrites par une version n'étaient pas relisibles par l'autre, entraînant des erreurs `Repetition level histogram size mismatch` à la lecture. Diagnostiqué en comparant explicitement les versions installées de part et d'autre, puis résolu en épinglant une version exacte (`pyarrow==19.0.0`) dans `requirements.txt`, garantissant que conteneur et environnement local utilisent strictement la même version.
 
-Le pipeline est **idempotent** : des déclenchements multiples dans la même journée ne dupliquent jamais de données, grâce à la déduplication systématique en Silver. Pour un jour présent dans plusieurs runs, Silver garde la version **la plus récente** : la bougie crypto du jour est encore incomplète lors des premiers runs, et garder la première version figerait une clôture provisoire.
+Le pipeline est **idempotent** : des déclenchements multiples dans la même journée ne dupliquent jamais de données, puisque Silver garde une seule version de chaque jour, la **plus récente** (un contrôle d'unicité le vérifie à chaque run).
 
 ---
 
@@ -162,20 +192,22 @@ L'URL `?refresh=off` fige la page, par exemple pour une capture d'écran.
 
 ## 🧪 Tests
 
-Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeline :
-* Nettoyage et déduplication de l'historique (Silver)
-* Calcul des rendements, moyennes mobiles et volatilité
-* Alignement calendaire multi-marchés (Gold)
-* Calcul des corrélations glissantes
-* **Test de régression sur l'écriture atomique des fichiers Parquet**, ajouté suite à un bug de corruption rencontré en conditions réelles (voir section Orchestration)
-* Fenêtre de rattrapage après une coupure, et échec visible quand un ticker manque
-* Intégrité des DAGs : chargement sans erreur, planification, enchaînement par Datasets (dans le conteneur, là où Airflow est installé)
-* Streaming : normalisation des messages Coinbase, détection des trades manqués, bougies (watermark, retard, doublons, offset sûr), écriture idempotente, **reprise après crash** sur un faux journal Kafka, métriques DuckDB (trous, fenêtre en temps)
+Trois niveaux de tests :
 
-69 tests au total. La logique du streaming est isolée du réseau (`events.py`, `bars.py`, `writer.py`) : elle se teste sans websocket ni broker.
+**64 tests pytest** sur le code Python :
+* contrat de schéma Bronze, fenêtre de rattrapage après une coupure, échec visible quand un ticker manque ;
+* **test de régression sur l'écriture des fichiers Parquet**, ajouté après un bug de corruption rencontré en conditions réelles (voir section Orchestration) ;
+* intégrité des DAGs : chargement sans erreur, planification, déclenchement de dbt par Bronze, et `dbt build` plutôt que `dbt run` (dans l'image, là où Airflow est installé) ;
+* streaming : normalisation des messages Coinbase, détection des trades manqués, bougies (watermark, retard, doublons, offset sûr), écriture idempotente, **reprise après crash** sur un faux journal Kafka, métriques DuckDB (trous, fenêtre en temps). Cette logique est isolée du réseau (`events.py`, `bars.py`, `writer.py`) : elle se teste sans websocket ni broker.
+
+**22 contrôles de données dbt** à chaque run du pipeline, et **5 tests unitaires dbt** sur la logique des modèles (voir la section dbt).
+
+**Une CI GitHub Actions** à chaque push et pull request, en deux jobs : les tests Python sans Airflow, puis la construction de l'image Docker de production, dans laquelle tournent tous les tests pytest, `dbt build` et les tests unitaires dbt. Comme la CI n'a accès ni aux vraies données ni à yfinance, `scripts/make_bronze_fixture.py` génère un Bronze synthétique réaliste : 8 actifs sur 120 jours, pas de cotation le week-end hors crypto, volume nul pour les indices, runs qui se chevauchent.
 
     pytest tests/ -v                                                      # en local (les tests des DAGs sont ignorés sans Airflow)
     docker compose exec airflow-scheduler python -m pytest tests -v       # tous les tests, DAGs compris
+    docker compose exec -w /opt/airflow/dbt airflow-scheduler dbt build --exclude-resource-type unit_test
+    docker compose exec -w /opt/airflow/dbt airflow-scheduler dbt test --select test_type:unit
 
 ---
 
@@ -184,6 +216,8 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 * **Airflow** pour l'orchestration : retries natifs, logs centralisés, dépendances explicites entre couches — préférable à un simple script séquentiel dès que le pipeline gagne en complexité.
 * **Parquet** plutôt que CSV : format colonnaire compressé, qui conserve les types de données.
 * **Pas de Spark** : le volume (8 tickers, historique quotidien) tient largement en mémoire sur une seule machine — Spark ajouterait de la complexité sans bénéfice réel.
+* **dbt-duckdb pour Silver et Gold** : des transformations en SQL lisible, documentées et testées au même endroit. DuckDB lit Bronze directement en Parquet et écrit Silver et Gold en Parquet (matérialisation `external`) : le dashboard lit des fichiers, sans base partagée. La base de travail de dbt est un fichier local au conteneur, que seul dbt ouvre, et jamais deux fois en même temps.
+* **Tests génériques maison** (`unique_combination`, `expression_is_true`) plutôt que le paquet `dbt_utils` : aucune dépendance à télécharger au build ou en CI.
 * **DuckDB pour les métriques live** : il lit les fichiers Parquet du consommateur à la demande, sans base à maintenir. Les fichiers ne sont pas écrits dans un `.duckdb` : DuckDB n'accepte qu'un seul processus en écriture, ce qui aurait empêché le dashboard de lire pendant que le consommateur écrit.
 * **Redpanda plutôt qu'Apache Kafka** : même protocole, donc mêmes clients et mêmes concepts (partitions, offsets, groupes de consommateurs), mais un seul binaire léger, sans ZooKeeper ni JVM, adapté à un poste personnel.
 * **Consommateur en Python plutôt que Spark Structured Streaming** : le fenêtrage, le watermark et la gestion des offsets sont écrits et testés explicitement, ce qui les rend lisibles. Le consommateur étant un composant séparé, il peut être remplacé par un job Spark sans toucher au reste.
@@ -199,11 +233,13 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 |---|---|
 | Extraction | Python, yfinance |
 | Orchestration | Apache Airflow (LocalExecutor, Datasets), PostgreSQL |
+| Transformations | dbt-core 1.12, dbt-duckdb |
 | Streaming | Websocket Coinbase, Redpanda (API Kafka), confluent-kafka |
 | Stockage | Parquet |
-| Traitement | Pandas, NumPy, DuckDB (SQL) |
+| Traitement | DuckDB (SQL), Pandas, NumPy |
 | Dashboard | Streamlit, Plotly |
-| Tests | pytest |
+| Qualité | pytest, tests de données et tests unitaires dbt |
+| CI | GitHub Actions |
 | Conteneurisation | Docker / Docker Compose |
 
 ---
@@ -211,19 +247,25 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 ## 📁 Structure du Projet
 
     finance-data-platform/
-    ├── config/                 # configuration (tickers suivis)
-    ├── dags/                   # DAGs Airflow (bronze, silver, gold) et Datasets partagés
-    ├── src/                     # logique métier batch (extraction, transformation, agrégation)
+    ├── .github/workflows/       # CI GitHub Actions
+    ├── config/                  # configuration (tickers suivis)
+    ├── dags/                    # DAGs Airflow (bronze_extract, dbt_build) et Datasets partagés
+    ├── dbt/                     # projet dbt
+    │   ├── models/              # staging, silver, gold, tests unitaires
+    │   ├── seeds/               # référentiel des actifs
+    │   └── tests/               # tests singuliers et génériques
+    ├── src/                     # extraction Bronze et contrat de schéma
     │   └── stream/              # couche temps réel : producteur, bougies, consommateur, requêtes DuckDB
     ├── dashboard/               # application Streamlit (page quotidienne)
     │   └── pages/               # page Live
-    ├── scripts/                 # utilitaires de debug (inspection des sorties par couche)
-    ├── tests/                   # tests unitaires (pytest)
+    ├── scripts/                 # Bronze synthétique pour la CI, utilitaires de debug
+    ├── tests/                   # tests pytest
     ├── data/                    # données générées (non versionnées) : bronze/, silver/, gold/, live/
-    ├── Dockerfile               # image Airflow avec les dépendances du pipeline
+    ├── Dockerfile               # image Airflow avec les dépendances du pipeline et dbt
     ├── Dockerfile.stream        # image légère des services streaming
     ├── docker-compose.yml       # Postgres, Airflow, Redpanda, producteur, consommateur
     ├── requirements-airflow.txt # dépendances de l'image Airflow
+    ├── requirements-dbt.txt     # dbt, dans un environnement séparé de l'image
     ├── requirements-stream.txt  # dépendances de l'image streaming
     ├── requirements.txt         # dépendances du dashboard et des tests en local
     └── pytest.ini
@@ -252,7 +294,7 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
        cp .env.example .env    # puis changer le mot de passe admin
        docker compose up -d --build
 
-   Cette commande lance le batch (Postgres, Airflow) et la couche temps réel (Redpanda, producteur, consommateur). Interface Airflow sur http://localhost:8080. Ensuite, plus rien à lancer à la main : si Docker Desktop démarre avec Windows, tout repart seul.
+   Cette commande lance le batch (Postgres, Airflow avec dbt) et la couche temps réel (Redpanda, producteur, consommateur). Interface Airflow sur http://localhost:8080. Ensuite, plus rien à lancer à la main : si Docker Desktop démarre avec Windows, tout repart seul.
 
 3. Lancer le dashboard Streamlit :
 
