@@ -5,6 +5,16 @@ models:
     description: >
       Corrélation glissante sur 30 jours calendaires entre chaque paire d'actifs, au format
       long. Calculée à partir de 30 jours où les deux rendements sont connus.
+    # Contrôles de SORTIE : dernier filet avant le dashboard
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [price_date, asset_1, asset_2]
+      - expression_is_true:
+          # Petite marge pour l'arrondi flottant de corr()
+          name: correlation_entre_moins_un_et_un
+          arguments:
+            expression: "correlation_30d between -1 - 1e-9 and 1 + 1e-9"
     columns:
       - name: price_date
         description: Dernier jour de la fenêtre de 30 jours.

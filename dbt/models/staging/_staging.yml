@@ -1,0 +1,43 @@
+version: 2
+
+# Contrôles d'ENTRÉE. Ils portent sur le staging, avant toute écriture : si l'un
+# d'eux échoue, dbt build saute Silver et Gold, et aucune donnée fausse n'arrive
+# dans les fichiers lus par le dashboard.
+models:
+  - name: stg_bronze_prices
+    description: Une ligne par actif et par jour de cotation, dans la version du run Bronze le plus récent.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [ticker_name, price_date]
+      - expression_is_true:
+          name: prix_strictement_positifs
+          arguments:
+            expression: "open > 0 and high > 0 and low > 0 and close > 0"
+      - expression_is_true:
+          name: high_superieur_ou_egal_a_low
+          arguments:
+            expression: "high >= low"
+      - expression_is_true:
+          name: open_et_close_entre_low_et_high
+          arguments:
+            expression: "open between low and high and close between low and high"
+      - expression_is_true:
+          # Un indice ou un taux (^VIX, ^TNX) n'a pas de volume échangé : 0 est normal
+          name: volume_positif_ou_nul
+          arguments:
+            expression: "volume >= 0"
+    columns:
+      - name: ticker_name
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('tickers')
+                field: ticker_name
+      - name: price_date
+        data_tests:
+          - not_null
+      - name: close
+        data_tests:
+          - not_null

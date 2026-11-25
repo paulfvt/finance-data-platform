@@ -5,6 +5,20 @@ models:
     description: >
       Historique quotidien nettoyé et enrichi, une ligne par actif et par jour de cotation.
       Les fenêtres (moyennes mobiles, volatilité) comptent des séances, pas des jours calendaires.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [ticker_name, price_date]
+      - expression_is_true:
+          name: volatilite_positive
+          arguments:
+            expression: "volatility_20d >= 0"
+            where: "volatility_20d is not null"
+      - expression_is_true:
+          name: rendements_finis
+          arguments:
+            expression: "isfinite(daily_return)"
+            where: "daily_return is not null"
     columns:
       - name: ticker_name
         description: Nom court de l'actif (bitcoin, sp500...), tiré du nom du fichier Bronze.

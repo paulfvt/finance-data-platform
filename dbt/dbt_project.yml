@@ -15,7 +15,8 @@ clean-targets: ["target", "logs"]
 models:
   finance_platform:
     staging:
-      # ephemeral : intégré comme sous-requête dans les modèles qui l'utilisent.
-      # Avec DuckDB en mémoire, chaque commande dbt repart d'une base vide : une
-      # vue créée par une commande précédente n'existerait plus.
-      +materialized: ephemeral
+      # Vue en mémoire : les contrôles d'entrée s'y appliquent AVANT l'écriture
+      # de Silver et Gold. DuckDB tournant en mémoire, chaque commande dbt repart
+      # d'une base vide : toujours passer par `dbt build` (seeds, modèles et
+      # tests dans la même commande), jamais par un `dbt run -s` isolé.
+      +materialized: view
