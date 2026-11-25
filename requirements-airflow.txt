@@ -1,0 +1,7 @@
+# Dépendances du pipeline, installées dans l'image Airflow (voir Dockerfile).
+# Le dashboard et les tests ont les leurs dans requirements.txt.
+yfinance>=0.2.43
+pandas>=2.2
+pyarrow==19.0.0   # même version que requirements.txt : voir README, section Orchestration
+duckdb>=1.0
+pytest>=8.0

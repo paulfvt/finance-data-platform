@@ -1,22 +1,75 @@
+# Airflow en LocalExecutor avec une base Postgres : les tâches peuvent tourner en
+# parallèle, contrairement à `airflow standalone` (SQLite, une tâche à la fois).
+# `restart: unless-stopped` relance tout dès que Docker Desktop démarre.
+
+x-airflow-common: &airflow-common
+  build: .
+  image: finance-data-platform-airflow:2.9.3
+  restart: unless-stopped
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-change-me-local-only}
+    PYTHONPATH: /opt/airflow
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./config:/opt/airflow/config
+    - ./data:/opt/airflow/data
+    - ./tests:/opt/airflow/tests
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
 services:
-  airflow:
-    image: apache/airflow:2.9.3-python3.11
-    container_name: finance_platform_airflow
-    entrypoint: >
-      bash -c "pip install --no-cache-dir -r /requirements.txt &&
-      airflow standalone"
-    ports:
-      - "8080:8080"
+  postgres:
+    image: postgres:16
+    container_name: finance_platform_postgres
+    restart: unless-stopped
     environment:
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./src:/opt/airflow/src
-      - ./config:/opt/airflow/config
-      - ./data:/opt/airflow/data
-      - ./requirements.txt:/requirements.txt
-      - airflow_home:/opt/airflow
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+
+  # Tourne une fois au démarrage : met le schéma de la base à jour et crée le compte admin.
+  airflow-init:
+    <<: *airflow-common
+    container_name: finance_platform_airflow_init
+    restart: "no"
+    command: >
+      bash -c "airflow db migrate &&
+      airflow users create --role Admin
+      --username ${AIRFLOW_ADMIN_USER:-admin}
+      --password ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      --firstname Admin --lastname Local --email admin@example.com || true"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: finance_platform_scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: finance_platform_webserver
+    command: webserver
+    ports:
+      - "127.0.0.1:8080:8080"   # accessible depuis ta machine seulement
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
 
 volumes:
-  airflow_home:
+  postgres_data:
+  airflow_logs:
