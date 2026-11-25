@@ -7,7 +7,7 @@
 ![Pandas](https://img.shields.io/badge/Pandas-Data_Processing-150458?style=flat-square&logo=pandas&logoColor=white)
 ![Tests](https://img.shields.io/badge/Tests-pytest-0A9EDC?style=flat-square&logo=pytest&logoColor=white)
 
-Un projet de data engineering de niveau ING3 (ECE Paris), axé sur l'ingestion, la transformation et l'agrégation de données financières en continu, via une architecture en couches et une orchestration autonome.
+Un projet de data engineering axé sur l'ingestion, la transformation et l'agrégation de données financières en continu, via une architecture en couches et une orchestration autonome.
 
 Finance Data Platform est un pipeline ETL construit autour de huit actifs représentatifs (actions, matières premières, taux, cryptomonnaies, indicateur de volatilité), conçu pour tourner de façon totalement autonome sur un poste de travail personnel — sans dépendre d'un serveur toujours allumé. Le système extrait quotidiennement les cours de marché, les nettoie et les enrichit, puis calcule des indicateurs de risque et de corrélation inter-actifs, restitués dans un dashboard interactif de niveau trading.
 
@@ -56,17 +56,19 @@ Un actif par grande classe, pour observer des dynamiques et des corrélations r�
 
 ## ⚙️ Orchestration & Automatisation
 
-Le pipeline est orchestré par **Apache Airflow**, avec un enchaînement automatique des trois couches via `TriggerDagRunOperator` : `extract_bronze_daily` déclenche `transform_silver_daily`, qui déclenche à son tour `aggregate_gold_daily`, chaque DAG ne se déclenchant qu'à la réussite du précédent.
+Le pipeline est orchestré par **Apache Airflow** (LocalExecutor, base Postgres), et les trois couches s'enchaînent par **Datasets** : `bronze_extract` publie le Dataset Bronze, ce qui lance `silver_transform`, qui publie le Dataset Silver, ce qui lance `gold_aggregate`. Chaque DAG déclare ce qu'il consomme et ce qu'il produit, sans connaître le suivant.
 
-**Un choix d'orchestration adapté à une contrainte réelle** : les DAGs n'ont pas de planning cron fixe (`schedule=None`). Le poste de travail n'étant pas allumé en permanence — usage en veille/déverrouillage plutôt que serveur 24/7 — un cron à heure fixe n'aurait aucun sens. L'extraction est déclenchée par une tâche planifiée Windows sur l'événement de **déverrouillage de session** (`SessionStateChangeTrigger`), plus représentatif de l'usage réel qu'une simple ouverture de session.
+**Un poste qui n'est pas un serveur** : le PC n'est pas allumé en permanence. Le DAG Bronze est planifié toutes les heures avec `catchup=False` : quand le PC sort de veille et que le scheduler repart, Airflow lance tout de suite le dernier créneau manqué, un seul. L'extraction calcule ensuite combien de jours relire depuis le dernier run réussi (`compute_lookback_days`), pour combler le trou laissé par la coupure au lieu de le garder pour toujours. Le dossier Bronze du jour est volontairement ignoré dans ce calcul : chaque run du jour le réécrit, et le prendre en compte faisait écraser le rattrapage du premier run par la petite fenêtre du deuxième (bug constaté et couvert par un test).
 
-**Robustesse face aux déclenchements multiples** : un poste déverrouillé plusieurs fois par jour peut produire des runs rapprochés. Deux protections mises en place :
-* `max_active_runs=1` sur le DAG Bronze, pour empêcher deux exécutions concurrentes du même DAG.
+**Pourquoi la V1 a été abandonnée** : la V1 déclenchait l'extraction par une tâche planifiée Windows, au déverrouillage de session. En pratique, sur 359 déclenchements, **320 ont échoué** parce que le moteur Docker n'était pas joignable au moment du déverrouillage, et l'erreur n'apparaissait que dans un fichier de log local. En plus, une fenêtre PowerShell s'ouvrait à chaque fois. La V2 confie la planification à l'outil fait pour ça et rend les échecs visibles : une extraction ou une transformation partiellement en échec fait maintenant échouer la tâche Airflow (avec retries) au lieu d'afficher un run vert.
+
+**Robustesse face aux runs rapprochés** :
+* `max_active_runs=1` sur chaque DAG, pour empêcher deux exécutions concurrentes.
 * **Écriture via fichier temporaire local au conteneur** avant copie finale vers le volume partagé, plutôt qu'une écriture ou un renommage direct sur le volume monté depuis Windows — après avoir constaté que ni l'atomicité du rename ni `shutil.move` ne fonctionnent de façon fiable sur ce type de montage cross-filesystem.
 
 **Cohérence des dépendances entre environnements** : une divergence de version de `pyarrow` entre le conteneur (Linux, installé via `requirements.txt`) et la machine locale (Windows) a provoqué une corruption silencieuse des fichiers Parquet — les métadonnées écrites par une version n'étaient pas relisibles par l'autre, entraînant des erreurs `Repetition level histogram size mismatch` à la lecture. Diagnostiqué en comparant explicitement les versions installées de part et d'autre, puis résolu en épinglant une version exacte (`pyarrow==19.0.0`) dans `requirements.txt`, garantissant que conteneur et environnement local utilisent strictement la même version.
 
-Le pipeline est **idempotent** : des déclenchements multiples dans la même journée ne dupliquent jamais de données, grâce à la déduplication systématique en Silver.
+Le pipeline est **idempotent** : des déclenchements multiples dans la même journée ne dupliquent jamais de données, grâce à la déduplication systématique en Silver. Pour un jour présent dans plusieurs runs, Silver garde la version **la plus récente** : la bougie crypto du jour est encore incomplète lors des premiers runs, et garder la première version figerait une clôture provisoire.
 
 ---
 
@@ -96,8 +98,11 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 * Alignement calendaire multi-marchés (Gold)
 * Calcul des corrélations glissantes
 * **Test de régression sur l'écriture atomique des fichiers Parquet**, ajouté suite à un bug de corruption rencontré en conditions réelles (voir section Orchestration)
+* Fenêtre de rattrapage après une coupure, et échec visible quand un ticker manque
+* Intégrité des DAGs : chargement sans erreur, planification, enchaînement par Datasets (dans le conteneur, là où Airflow est installé)
 
-    pytest tests/ -v
+    pytest tests/ -v                                                   # tests unitaires, en local
+    docker compose run --rm airflow-scheduler python -m pytest tests -v   # tous les tests, DAGs compris
 
 ---
 
@@ -107,7 +112,8 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 * **Parquet** plutôt que CSV : format colonnaire compressé, qui conserve les types de données.
 * **Pas de Spark** : le volume (8 tickers, historique quotidien) tient largement en mémoire sur une seule machine — Spark ajouterait de la complexité sans bénéfice réel.
 * **DuckDB envisagé pour une V2** de la couche Gold (requêtes analytiques plus riches) — non implémenté pour l'instant, Pandas/Parquet suffisant au volume actuel.
-* **Docker Compose** pour la reproductibilité : l'ensemble du pipeline (Airflow inclus) se lance en une seule commande, `restart: unless-stopped` pour survivre aux redémarrages du poste.
+* **Docker Compose** pour la reproductibilité : l'ensemble du pipeline (Airflow et Postgres) se lance en une seule commande, avec `restart: unless-stopped` pour repartir tout seul quand Docker Desktop démarre.
+* **Image Docker dédiée** : les dépendances sont installées une fois au build, et non plus à chaque démarrage du conteneur (lent, et impossible sans réseau).
 
 ---
 
@@ -116,13 +122,12 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 | Composant | Outil |
 |---|---|
 | Extraction | Python, yfinance |
-| Orchestration | Apache Airflow |
+| Orchestration | Apache Airflow (LocalExecutor, Datasets), PostgreSQL |
 | Stockage | Parquet |
 | Traitement | Pandas, NumPy |
 | Dashboard | Streamlit, Plotly |
 | Tests | pytest |
 | Conteneurisation | Docker / Docker Compose |
-| Automatisation | Tâche planifiée Windows (déverrouillage de session) |
 
 ---
 
@@ -130,16 +135,17 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
 
     finance-data-platform/
     ├── config/                 # configuration (tickers suivis)
-    ├── dags/                   # DAGs Airflow (extract_bronze, transform_silver, aggregate_gold)
+    ├── dags/                   # DAGs Airflow (bronze, silver, gold) et Datasets partagés
     ├── src/                    # logique métier (extraction, transformation, agrégation)
     ├── dashboard/               # application Streamlit
     ├── scripts/                 # utilitaires de debug (inspection des sorties par couche)
     ├── tests/                   # tests unitaires (pytest)
     ├── data/                    # données générées (non versionnées) : bronze/, silver/, gold/
-    ├── docker-compose.yml
-    ├── pytest.ini
-    ├── trigger_pipeline.ps1     # script de déclenchement (tâche planifiée Windows)
-    └── task_backup.xml          # configuration de référence de la tâche planifiée
+    ├── Dockerfile               # image Airflow avec les dépendances du pipeline
+    ├── docker-compose.yml       # Postgres, init, scheduler, webserver
+    ├── requirements-airflow.txt # dépendances installées dans l'image
+    ├── requirements.txt         # dépendances du dashboard et des tests en local
+    └── pytest.ini
 
 ---
 
@@ -158,9 +164,12 @@ Suite de tests unitaires (**pytest**) couvrant les fonctions critiques du pipeli
        git clone https://github.com/paulfvt/finance-data-platform.git
        cd finance-data-platform
 
-2. Démarrer Airflow avec Docker :
+2. Démarrer Airflow avec Docker (le premier lancement construit l'image) :
 
-       docker compose up -d
+       cp .env.example .env    # puis changer le mot de passe admin
+       docker compose up -d --build
+
+   Interface Airflow sur http://localhost:8080. Ensuite, plus rien à lancer à la main : si Docker Desktop démarre avec Windows, le pipeline repart tout seul.
 
 3. Lancer le dashboard Streamlit :
 
