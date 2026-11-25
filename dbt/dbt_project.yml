@@ -15,8 +15,5 @@ clean-targets: ["target", "logs"]
 models:
   finance_platform:
     staging:
-      # Vue en mémoire : les contrôles d'entrée s'y appliquent AVANT l'écriture
-      # de Silver et Gold. DuckDB tournant en mémoire, chaque commande dbt repart
-      # d'une base vide : toujours passer par `dbt build` (seeds, modèles et
-      # tests dans la même commande), jamais par un `dbt run -s` isolé.
+      # Vue : les contrôles d'entrée s'y appliquent AVANT l'écriture de Silver et Gold
       +materialized: view

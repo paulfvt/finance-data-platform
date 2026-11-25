@@ -1,10 +1,12 @@
-# DuckDB en mémoire : aucune base persistante, donc aucun fichier .duckdb verrouillé
-# (DuckDB n'accepte qu'un processus en écriture). Les modèles Silver et Gold sont
-# écrits en Parquet (matérialisation « external »), et c'est ce que lit le dashboard.
+# Base DuckDB de travail de dbt : un fichier local au conteneur (hors du volume
+# monté depuis Windows). Seul dbt l'ouvre : le dashboard lit les fichiers Parquet
+# écrits par Silver et Gold (matérialisation « external »), et le DAG ne lance
+# jamais deux builds à la fois. Un fichier plutôt que la mémoire, parce que les
+# tests unitaires dbt ont besoin que les modèles testés existent déjà.
 finance_platform:
   target: dev
   outputs:
     dev:
       type: duckdb
-      path: ":memory:"
+      path: "{{ env_var('DBT_DUCKDB_PATH', '/tmp/dbt_finance.duckdb') }}"
       threads: 2

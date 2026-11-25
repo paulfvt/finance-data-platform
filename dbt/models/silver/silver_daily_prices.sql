@@ -7,7 +7,7 @@
 
 {{ config(
     materialized = 'external',
-    location = env_var('DATA_DIR', '/opt/airflow/data') ~ '/dbt/silver_daily_prices.parquet',
+    location = env_var('DATA_DIR', '/opt/airflow/data') ~ '/silver/daily_prices.parquet',
     format = 'parquet'
 ) }}
 

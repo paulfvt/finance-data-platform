@@ -1,0 +1,80 @@
+version: 2
+
+# Tests unitaires dbt : des entrées simulées, un résultat attendu. Ils reprennent
+# les tests de comportement de l'ancien code pandas, et `dbt build` les exécute
+# avant de construire les modèles.
+
+unit_tests:
+
+  - name: staging_garde_la_version_du_run_le_plus_recent
+    description: >
+      Un même jour relu par deux runs Bronze : on garde le plus récent. Pour la crypto,
+      le premier run a pu capturer une bougie encore incomplète.
+    model: stg_bronze_prices
+    given:
+      # La source est un read_parquet, pas une table : dbt ne peut pas lire ses
+      # types de colonnes, on fournit donc l'entrée en SQL typé.
+      - input: source('bronze', 'prices')
+        format: sql
+        rows: |
+          select '/data/bronze/2026-08-10/bitcoin.parquet' as filename, 'BTC-USD' as ticker, timestamp '2026-08-10' as date,
+                 64000.0 as open, 65278.0 as high, 64489.0 as low, 64455.0 as close, 1.0 as volume
+          union all
+          select '/data/bronze/2026-08-11/bitcoin.parquet', 'BTC-USD', timestamp '2026-08-10', 64000.0, 65321.0, 63752.0, 63910.0, 2.0
+          union all
+          select '/data/bronze/2026-08-11/bitcoin.parquet', 'BTC-USD', timestamp '2026-08-11', 63910.0, 64500.0, 63500.0, 64100.0, 3.0
+    expect:
+      rows:
+        - {ticker_name: bitcoin, price_date: "2026-08-10", close: 63910, run_date: "2026-08-11"}
+        - {ticker_name: bitcoin, price_date: "2026-08-11", close: 64100, run_date: "2026-08-11"}
+
+  - name: silver_ecarte_les_prix_invalides_et_calcule_les_rendements
+    description: >
+      Clôture nulle ou négative écartée ; pas de rendement pour la première séance ;
+      rendement positif quand le prix monte ; moyenne mobile sur les séances disponibles
+      en début d'historique ; volatilité à partir de 2 rendements seulement.
+    model: silver_daily_prices
+    given:
+      - input: ref('stg_bronze_prices')
+        rows:
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-11-02", open: 100, high: 101, low: 99, close: 100, volume: 0}
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-11-03", open: 100, high: 111, low: 99, close: 110, volume: 0}
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-11-04", open: 110, high: 111, low: 0, close: 0, volume: 0}
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-11-05", open: 110, high: 122, low: 109, close: 121, volume: 0}
+    expect:
+      rows:
+        - {price_date: "2026-11-02", daily_return: null, ma_20: 100, volatility_20d: null}
+        - {price_date: "2026-11-03", daily_return: 0.09531017980432493, ma_20: 105, volatility_20d: null}
+        # 121/110 = 110/100 = 1,1 : deux rendements identiques, donc une volatilité nulle
+        - {price_date: "2026-11-05", daily_return: 0.09531017980432493, ma_20: 110.33333333333333, volatility_20d: 0.0}
+
+  - name: gold_attend_une_fenetre_complete_et_comble_le_week_end
+    description: >
+      Fenêtre réduite à 3 jours pour le test. Les actions ne cotent pas le samedi 7 :
+      la série est complétée, et la corrélation n'apparaît qu'avec 3 jours où les deux
+      rendements sont connus. Paire orientée dans l'ordre du référentiel.
+    model: gold_correlations_30d
+    overrides:
+      vars:
+        correlation_window_days: 3
+    given:
+      - input: ref('tickers')
+        rows:
+          - {ticker_name: sp500, ticker: "^GSPC", asset_class: actions, display_order: 1}
+          - {ticker_name: bitcoin, ticker: BTC-USD, asset_class: crypto, display_order: 6}
+      - input: ref('silver_daily_prices')
+        rows:
+          - {ticker_name: sp500,   price_date: "2026-11-05", daily_return: null}
+          - {ticker_name: sp500,   price_date: "2026-11-06", daily_return: 0.01}
+          - {ticker_name: sp500,   price_date: "2026-11-09", daily_return: 0.03}
+          - {ticker_name: bitcoin, price_date: "2026-11-05", daily_return: null}
+          - {ticker_name: bitcoin, price_date: "2026-11-06", daily_return: 0.02}
+          - {ticker_name: bitcoin, price_date: "2026-11-07", daily_return: 0.01}
+          - {ticker_name: bitcoin, price_date: "2026-11-08", daily_return: 0.03}
+          - {ticker_name: bitcoin, price_date: "2026-11-09", daily_return: 0.05}
+    expect:
+      # Pas de ligne le 08 : sur la fenêtre du 06 au 08, le rendement action du vendredi
+      # est recopié le samedi et le dimanche (0,01 trois fois). Série constante, variance
+      # nulle, corrélation non définie : c'est le biais du week-end, corrigé plus tard.
+      rows:
+        - {price_date: "2026-11-09", asset_1: sp500, asset_2: bitcoin}

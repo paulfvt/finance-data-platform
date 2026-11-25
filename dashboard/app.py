@@ -33,8 +33,14 @@ st.title("📈 Finance Data Platform")
 
 
 @st.cache_data
+def load_silver_all() -> pd.DataFrame:
+    """Silver construite par dbt : un seul fichier pour tous les actifs."""
+    return pd.read_parquet(SILVER_DIR / "daily_prices.parquet").rename(columns={"price_date": "date"})
+
+
 def load_silver(ticker_name: str) -> pd.DataFrame:
-    return pd.read_parquet(SILVER_DIR / f"{ticker_name}.parquet")
+    df = load_silver_all()
+    return df[df["ticker_name"] == ticker_name].sort_values("date").reset_index(drop=True)
 
 
 @st.cache_data

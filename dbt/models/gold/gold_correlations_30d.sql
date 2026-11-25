@@ -11,11 +11,12 @@
 
 {{ config(
     materialized = 'external',
-    location = env_var('DATA_DIR', '/opt/airflow/data') ~ '/dbt/gold_correlations_30d.parquet',
+    location = env_var('DATA_DIR', '/opt/airflow/data') ~ '/gold/correlations_30d.parquet',
     format = 'parquet'
 ) }}
 
-{% set window_days = 30 %}
+{# Variable plutôt que constante : les tests unitaires la réduisent à 3 jours #}
+{% set window_days = var('correlation_window_days', 30) %}
 
 with silver as (
 
