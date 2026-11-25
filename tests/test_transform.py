@@ -54,6 +54,22 @@ def test_clean_ticker_history_removes_invalid_prices():
     assert result.iloc[0]["close"] == 100.0
 
 
+def test_clean_ticker_history_keeps_latest_version_of_a_day():
+    """
+    Un jour relu par un run plus récent (bougie crypto du jour encore incomplète
+    au premier run) doit garder la valeur la plus récente, pas la première vue.
+    """
+    df = pd.DataFrame({
+        "date": ["2026-01-01", "2026-01-02", "2026-01-02"],
+        "close": [100.0, 103.0, 107.0],  # 103 = clôture provisoire, 107 = clôture finale
+    })
+
+    result = clean_ticker_history(df)
+
+    assert len(result) == 2
+    assert result.iloc[-1]["close"] == 107.0
+
+
 def test_clean_ticker_history_deduplicates_by_date():
     """Un même jour apparaissant plusieurs fois (fenêtre de lookback qui se chevauche) ne doit compter qu'une fois."""
     df = pd.DataFrame({

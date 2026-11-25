@@ -73,7 +73,10 @@ def clean_ticker_history(df: pd.DataFrame) -> pd.DataFrame:
     df = flatten_columns(df)
 
     df["date"] = pd.to_datetime(df["date"])
-    df = df.drop_duplicates(subset="date").sort_values("date").reset_index(drop=True)
+    # keep="last" : les fichiers Bronze sont lus du plus ancien au plus récent, donc
+    # la dernière occurrence d'un jour est la plus à jour. Indispensable pour la
+    # crypto, dont la bougie du jour est encore incomplète lors des premiers runs.
+    df = df.drop_duplicates(subset="date", keep="last").sort_values("date").reset_index(drop=True)
 
     before = len(df)
     df = df[df["close"].notna() & (df["close"] > 0)]
@@ -138,11 +141,11 @@ def run_transformation() -> list[Path]:
             logger.error("Transformation abandonnée pour %s : %s", ticker_name, exc)
             errors[ticker_name] = str(exc)
 
+    # Même logique qu'en Bronze : un échec partiel doit se voir dans Airflow.
     if errors:
-        logger.warning("Transformation terminée avec %d erreur(s) : %s", len(errors), errors)
-    else:
-        logger.info("Transformation terminée sans erreur (%d tickers).", len(saved_paths))
+        raise RuntimeError(f"Transformation en échec pour {len(errors)} ticker(s) : {errors}")
 
+    logger.info("Transformation terminée sans erreur (%d tickers).", len(saved_paths))
     return saved_paths
 
 
