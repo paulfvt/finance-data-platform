@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Rapide : toute la logique Python (extraction, streaming, requêtes DuckDB), sans Airflow.
+  # Les tests des DAGs sont ignorés ici (pas d'Airflow) et tournent dans le job suivant.
+  pytest:
+    name: Tests Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests -v
+
+  # Avec l'image Docker de production : mêmes versions d'Airflow, de dbt et de DuckDB
+  # qu'en vrai, et le Dockerfile lui-même est vérifié au passage.
+  image:
+    name: Image Airflow, DAGs et dbt
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construire l'image Airflow (Airflow + dbt)
+        run: docker compose build airflow-scheduler
+
+      - name: Tests des DAGs, puis dbt build sur un Bronze synthétique
+        # SQLite jetable à la place de Postgres : les tests chargent les DAGs sans les exécuter.
+        run: |
+          docker compose run --rm --no-deps \
+            -e AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////tmp/airflow.db \
+            -v "$PWD/scripts:/opt/airflow/scripts:ro" \
+            airflow-scheduler bash -c '
+              set -euo pipefail
+              airflow db migrate > /dev/null
+              python -m pytest tests -v -p no:cacheprovider
+
+              python /opt/airflow/scripts/make_bronze_fixture.py /tmp/fixture
+              cd /opt/airflow/dbt
+              export DATA_DIR=/tmp/fixture DBT_DUCKDB_PATH=/tmp/ci.duckdb
+              dbt build --no-use-colors --exclude-resource-type unit_test
+              dbt test  --no-use-colors --select "test_type:unit"
+            '
