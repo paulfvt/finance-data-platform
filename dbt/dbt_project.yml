@@ -12,6 +12,12 @@ macro-paths: ["macros"]
 # - DBT_TARGET_PATH, DBT_LOG_PATH : hors du volume monté depuis Windows (écritures nombreuses et lentes)
 clean-targets: ["target", "logs"]
 
+vars:
+  # Plus longue fermeture normale d'un marché (pont de 4 jours). Au-delà, l'absence de
+  # cotation est un trou de DONNÉES (extraction arrêtée) : ni rendement calculé à
+  # travers (Silver), ni prix complété (Gold).
+  max_market_closure_days: 4
+
 models:
   finance_platform:
     staging:

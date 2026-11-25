@@ -18,9 +18,8 @@
 
 {# Variable plutôt que constante : les tests unitaires la réduisent à 3 jours #}
 {% set window_days = var('correlation_window_days', 30) %}
-{# Plus longue fermeture normale d'un marché (pont de 4 jours). Au-delà, c'est un
-   trou de DONNÉES (extraction arrêtée), pas un week-end : on ne complète pas. #}
-{% set max_fill_days = 4 %}
+{# Au-delà, c'est un trou de DONNÉES, pas un week-end : on ne complète pas (voir dbt_project.yml) #}
+{% set max_fill_days = var('max_market_closure_days') %}
 
 with silver as (
 

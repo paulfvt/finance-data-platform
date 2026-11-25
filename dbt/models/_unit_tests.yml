@@ -48,6 +48,28 @@ unit_tests:
         # 121/110 = 110/100 = 1,1 : deux rendements identiques, donc une volatilité nulle
         - {price_date: "2026-11-05", daily_return: 0.09531017980432493, ma_20: 110.33333333333333, volatility_20d: 0.0}
 
+  - name: silver_pas_de_rendement_a_travers_un_trou_de_donnees
+    description: >
+      Un week-end (vendredi -> lundi, 3 jours) donne bien un rendement. Un trou de
+      données (extraction arrêtée un mois) n'en donne pas : sinon un « rendement d'une
+      séance » couvrirait un mois de mouvement et fausserait la volatilité.
+    model: silver_daily_prices
+    given:
+      - input: ref('stg_bronze_prices')
+        rows:
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-08-13", open: 100, high: 101, low: 99, close: 100, volume: 0}
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-08-14", open: 100, high: 101, low: 99, close: 100, volume: 0}
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-08-17", open: 100, high: 101, low: 99, close: 100, volume: 0}
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-09-15", open: 130, high: 131, low: 129, close: 130, volume: 0}
+          - {ticker_name: sp500, ticker: "^GSPC", price_date: "2026-09-16", open: 130, high: 131, low: 129, close: 130, volume: 0}
+    expect:
+      rows:
+        - {price_date: "2026-08-13", daily_return: null}
+        - {price_date: "2026-08-14", daily_return: 0.0}
+        - {price_date: "2026-08-17", daily_return: 0.0}
+        - {price_date: "2026-09-15", daily_return: null}
+        - {price_date: "2026-09-16", daily_return: 0.0}
+
   - name: gold_attend_une_fenetre_complete_et_comble_le_week_end
     description: >
       Fenêtre réduite à 3 jours pour le test. Les actions ne cotent pas le week-end

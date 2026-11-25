@@ -25,7 +25,8 @@ returns as (
 
     select
         *,
-        close / lag(close) over by_day as price_ratio
+        close / lag(close) over by_day                  as price_ratio,
+        price_date - lag(price_date) over by_day        as days_since_previous
     from prices
     window by_day as (partition by ticker_name order by price_date)
 
@@ -42,8 +43,15 @@ metrics as (
         low,
         close,
         volume,
-        -- Rendement log ; un ratio nul ou négatif donne NULL plutôt qu'une erreur
-        case when price_ratio > 0 then ln(price_ratio) end                    as daily_return,
+        -- Rendement log par rapport à la séance précédente. NULL si le ratio n'est pas
+        -- strictement positif, ou si la séance précédente date de plus de
+        -- {{ var('max_market_closure_days') }} jours : c'est alors un trou de données, et
+        -- un « rendement d'une séance » couvrirait des semaines de mouvement.
+        case
+            when price_ratio > 0
+             and days_since_previous <= {{ var('max_market_closure_days') }}
+            then ln(price_ratio)
+        end                                                                   as daily_return,
         avg(close) over last_20                                               as ma_20,
         avg(close) over last_50                                               as ma_50
     from returns
