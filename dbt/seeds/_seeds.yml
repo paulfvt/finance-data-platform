@@ -1,0 +1,23 @@
+version: 2
+
+seeds:
+  - name: tickers
+    description: >
+      Référentiel des actifs suivis. Doit rester aligné sur config/tickers.py, qui pilote
+      l'extraction (vérifié par tests/test_dbt_project.py). display_order fixe l'ordre
+      des paires dans Gold : (sp500, bitcoin) et non (bitcoin, sp500).
+    config:
+      column_types:
+        ticker_name: varchar
+        ticker: varchar
+        asset_class: varchar
+        display_order: integer
+    columns:
+      - name: ticker_name
+        description: Nom court de l'actif, identique au nom des fichiers Bronze.
+      - name: ticker
+        description: Symbole yfinance.
+      - name: asset_class
+        description: Grande classe d'actifs.
+      - name: display_order
+        description: Ordre d'affichage et d'orientation des paires.

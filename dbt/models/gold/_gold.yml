@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: gold_correlations_30d
+    description: >
+      Corrélation glissante sur 30 jours calendaires entre chaque paire d'actifs, au format
+      long. Calculée à partir de 30 jours où les deux rendements sont connus.
+    columns:
+      - name: price_date
+        description: Dernier jour de la fenêtre de 30 jours.
+      - name: asset_1
+        description: Premier actif de la paire (ordre du référentiel tickers).
+      - name: asset_2
+        description: Second actif de la paire.
+      - name: correlation_30d
+        description: Coefficient de corrélation de Pearson des rendements journaliers, entre -1 et 1.

@@ -1,0 +1,9 @@
+ticker_name,ticker,asset_class,display_order
+sp500,^GSPC,actions,1
+stoxx50,^STOXX50E,actions,2
+gold,GC=F,matieres_premieres,3
+oil,CL=F,matieres_premieres,4
+us10y,^TNX,taux,5
+bitcoin,BTC-USD,crypto,6
+ethereum,ETH-USD,crypto,7
+vix,^VIX,sentiment,8
