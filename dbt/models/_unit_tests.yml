@@ -50,9 +50,10 @@ unit_tests:
 
   - name: gold_attend_une_fenetre_complete_et_comble_le_week_end
     description: >
-      Fenêtre réduite à 3 jours pour le test. Les actions ne cotent pas le samedi 7 :
-      la série est complétée, et la corrélation n'apparaît qu'avec 3 jours où les deux
-      rendements sont connus. Paire orientée dans l'ordre du référentiel.
+      Fenêtre réduite à 3 jours pour le test. Les actions ne cotent pas le week-end
+      du 7-8 : leur dernier PRIX est repris, ce qui donne des rendements nuls ces
+      jours-là. La corrélation n'apparaît qu'avec 3 jours où les deux rendements sont
+      connus. Paire orientée dans l'ordre du référentiel.
     model: gold_correlations_30d
     overrides:
       vars:
@@ -64,17 +65,66 @@ unit_tests:
           - {ticker_name: bitcoin, ticker: BTC-USD, asset_class: crypto, display_order: 6}
       - input: ref('silver_daily_prices')
         rows:
-          - {ticker_name: sp500,   price_date: "2026-11-05", daily_return: null}
-          - {ticker_name: sp500,   price_date: "2026-11-06", daily_return: 0.01}
-          - {ticker_name: sp500,   price_date: "2026-11-09", daily_return: 0.03}
-          - {ticker_name: bitcoin, price_date: "2026-11-05", daily_return: null}
-          - {ticker_name: bitcoin, price_date: "2026-11-06", daily_return: 0.02}
-          - {ticker_name: bitcoin, price_date: "2026-11-07", daily_return: 0.01}
-          - {ticker_name: bitcoin, price_date: "2026-11-08", daily_return: 0.03}
-          - {ticker_name: bitcoin, price_date: "2026-11-09", daily_return: 0.05}
+          - {ticker_name: sp500,   price_date: "2026-11-05", close: 100}
+          - {ticker_name: sp500,   price_date: "2026-11-06", close: 101}
+          - {ticker_name: sp500,   price_date: "2026-11-09", close: 104}
+          - {ticker_name: bitcoin, price_date: "2026-11-05", close: 100}
+          - {ticker_name: bitcoin, price_date: "2026-11-06", close: 102}
+          - {ticker_name: bitcoin, price_date: "2026-11-07", close: 103}
+          - {ticker_name: bitcoin, price_date: "2026-11-08", close: 106}
+          - {ticker_name: bitcoin, price_date: "2026-11-09", close: 111}
     expect:
-      # Pas de ligne le 08 : sur la fenêtre du 06 au 08, le rendement action du vendredi
-      # est recopié le samedi et le dimanche (0,01 trois fois). Série constante, variance
-      # nulle, corrélation non définie : c'est le biais du week-end, corrigé plus tard.
+      # Le 07 : seulement 2 rendements connus dans la fenêtre (le 05 n'en a pas).
+      # Le 08 : rendements action [ln 1,01 ; 0 ; 0], qui ne sont pas constants, donc la
+      # corrélation existe. (Avec l'ancien ffill des rendements, l'action valait 0,01
+      # trois fois de suite, la variance était nulle et cette ligne manquait.)
       rows:
+        - {price_date: "2026-11-08", asset_1: sp500, asset_2: bitcoin}
         - {price_date: "2026-11-09", asset_1: sp500, asset_2: bitcoin}
+
+  - name: gold_ne_comble_pas_un_trou_de_donnees
+    description: >
+      Fenêtre de 3 jours. Bitcoin n'a aucune donnée du 3 au 9 (extraction arrêtée, 6 jours
+      sans cotation alors qu'il cote tous les jours) : au-delà de 4 jours, le prix n'est
+      plus complété. Aucune corrélation ne doit s'appuyer sur un prix inventé : il faut
+      attendre 3 rendements réels après le trou.
+    model: gold_correlations_30d
+    overrides:
+      vars:
+        correlation_window_days: 3
+    given:
+      - input: ref('tickers')
+        rows:
+          - {ticker_name: bitcoin, ticker: BTC-USD, asset_class: crypto, display_order: 6}
+          - {ticker_name: ethereum, ticker: ETH-USD, asset_class: crypto, display_order: 7}
+      - input: ref('silver_daily_prices')
+        rows:
+          - {ticker_name: bitcoin,  price_date: "2026-11-01", close: 100}
+          - {ticker_name: bitcoin,  price_date: "2026-11-02", close: 101}
+          - {ticker_name: bitcoin,  price_date: "2026-11-10", close: 120}
+          - {ticker_name: bitcoin,  price_date: "2026-11-11", close: 118}
+          - {ticker_name: bitcoin,  price_date: "2026-11-12", close: 121}
+          - {ticker_name: bitcoin,  price_date: "2026-11-13", close: 125}
+          - {ticker_name: ethereum, price_date: "2026-11-01", close: 10}
+          - {ticker_name: ethereum, price_date: "2026-11-02", close: 10.2}
+          - {ticker_name: ethereum, price_date: "2026-11-03", close: 10.1}
+          - {ticker_name: ethereum, price_date: "2026-11-04", close: 10.4}
+          - {ticker_name: ethereum, price_date: "2026-11-05", close: 10.3}
+          - {ticker_name: ethereum, price_date: "2026-11-06", close: 10.5}
+          - {ticker_name: ethereum, price_date: "2026-11-07", close: 10.6}
+          - {ticker_name: ethereum, price_date: "2026-11-08", close: 10.4}
+          - {ticker_name: ethereum, price_date: "2026-11-09", close: 10.8}
+          - {ticker_name: ethereum, price_date: "2026-11-10", close: 11.0}
+          - {ticker_name: ethereum, price_date: "2026-11-11", close: 10.9}
+          - {ticker_name: ethereum, price_date: "2026-11-12", close: 11.2}
+          - {ticker_name: ethereum, price_date: "2026-11-13", close: 11.5}
+    expect:
+      # Bitcoin : prix complété du 3 au 6 (4 jours), inconnu du 7 au 9, rendements réels
+      # à nouveau à partir du 11 (le 10 n'a pas de veille connue).
+      # - le 04 : rendements bitcoin [ln 1,01 ; 0 ; 0], corrélation définie ;
+      # - les 05 et 06 : rendements bitcoin [0 ; 0 ; 0], série constante, pas de corrélation ;
+      # - du 07 au 12 : la fenêtre touche le trou, pas de corrélation ;
+      # - le 13 : trois rendements réels après le trou.
+      rows:
+        - {price_date: "2026-11-04", asset_1: bitcoin, asset_2: ethereum}
+        - {price_date: "2026-11-13", asset_1: bitcoin, asset_2: ethereum}

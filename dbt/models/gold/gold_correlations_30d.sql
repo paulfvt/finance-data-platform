@@ -4,10 +4,11 @@
 -- Les marchés traditionnels ferment le week-end, la crypto cote tous les jours :
 -- les séries sont alignées sur un calendrier complet avant le calcul.
 --
--- ATTENTION, reproduit à l'identique de l'ancien code pandas : les jours sans
--- cotation reprennent le dernier RENDEMENT connu (ffill). Le mouvement du
--- vendredi compte donc trois fois pour les actions. Biais corrigé dans un
--- commit séparé, pour que la migration reste vérifiable.
+-- Les jours sans cotation reprennent le dernier PRIX connu, et les rendements
+-- sont calculés ensuite sur le calendrier complet : un samedi donne ln(P/P) = 0
+-- (pas d'information), le lundi porte tout le mouvement depuis vendredi, et
+-- chaque mouvement compte une seule fois. (L'ancien code recopiait le dernier
+-- RENDEMENT : le mouvement du vendredi comptait trois fois.)
 
 {{ config(
     materialized = 'external',
@@ -17,10 +18,13 @@
 
 {# Variable plutôt que constante : les tests unitaires la réduisent à 3 jours #}
 {% set window_days = var('correlation_window_days', 30) %}
+{# Plus longue fermeture normale d'un marché (pont de 4 jours). Au-delà, c'est un
+   trou de DONNÉES (extraction arrêtée), pas un week-end : on ne complète pas. #}
+{% set max_fill_days = 4 %}
 
 with silver as (
 
-    select ticker_name, price_date, daily_return
+    select ticker_name, price_date, close
     from {{ ref('silver_daily_prices') }}
 
 ),
@@ -44,23 +48,53 @@ assets as (
 
 ),
 
-aligned as (
+last_known as (
 
-    -- Calendrier complet x actifs, rendement manquant complété par le dernier connu
+    -- Calendrier complet x actifs, avec le dernier prix connu et sa date
     select
         c.price_date,
         a.ticker_name,
         a.display_order,
-        last_value(s.daily_return ignore nulls) over (
-            partition by a.ticker_name
-            order by c.price_date
-            rows between unbounded preceding and current row
-        ) as daily_return
+        last_value(s.close ignore nulls) over running        as last_close,
+        last_value(s.price_date ignore nulls) over running   as last_quote_date
     from calendar c
     cross join assets a
     left join silver s
         on s.ticker_name = a.ticker_name
        and s.price_date = c.price_date
+    window running as (
+        partition by a.ticker_name
+        order by c.price_date
+        rows between unbounded preceding and current row
+    )
+
+),
+
+filled_prices as (
+
+    -- Prix complété seulement sur une fermeture normale ({{ max_fill_days }} jours au plus).
+    -- Après un trou plus long, le prix reste inconnu : pas de rendement inventé, et
+    -- pas de corrélation tant que la fenêtre ne contient pas assez de jours réels.
+    select
+        price_date,
+        ticker_name,
+        display_order,
+        case
+            when price_date - last_quote_date <= {{ max_fill_days }} then last_close
+        end as close
+    from last_known
+
+),
+
+aligned as (
+
+    -- Rendement d'un jour calendaire au suivant : 0 quand le marché était fermé
+    select
+        price_date,
+        ticker_name,
+        display_order,
+        ln(close / lag(close) over (partition by ticker_name order by price_date)) as daily_return
+    from filled_prices
 
 ),
 
