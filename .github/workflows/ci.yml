@@ -9,6 +9,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Lecture seule par défaut ; seul le job de publication de la doc reçoit plus.
+permissions:
+  contents: read
+
 jobs:
   # Rapide : toute la logique Python (extraction, streaming, requêtes DuckDB), sans Airflow.
   # Les tests des DAGs sont ignorés ici (pas d'Airflow) et tournent dans le job suivant.
@@ -38,12 +42,15 @@ jobs:
       - name: Construire l'image Airflow (Airflow + dbt)
         run: docker compose build airflow-scheduler
 
-      - name: Tests des DAGs, puis dbt build sur un Bronze synthétique
+      - name: Tests des DAGs, dbt build sur un Bronze synthétique, puis dbt docs
         # SQLite jetable à la place de Postgres : les tests chargent les DAGs sans les exécuter.
+        # site/ reçoit la doc dbt ; ouvert en écriture car le conteneur tourne sous un autre utilisateur.
         run: |
+          mkdir -p site && chmod 777 site
           docker compose run --rm --no-deps \
             -e AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////tmp/airflow.db \
             -v "$PWD/scripts:/opt/airflow/scripts:ro" \
+            -v "$PWD/site:/opt/airflow/site" \
             airflow-scheduler bash -c '
               set -euo pipefail
               airflow db migrate > /dev/null
@@ -54,4 +61,33 @@ jobs:
               export DATA_DIR=/tmp/fixture DBT_DUCKDB_PATH=/tmp/ci.duckdb
               dbt build --no-use-colors --exclude-resource-type unit_test
               dbt test  --no-use-colors --select "test_type:unit"
+
+              # Site statique (un seul fichier HTML) : modèles, colonnes, tests, lineage, SQL.
+              # Généré sur le Bronze synthétique : la structure est documentée, aucune donnée réelle publiée.
+              dbt docs generate --static --no-use-colors
+              cp "$DBT_TARGET_PATH/static_index.html" /opt/airflow/site/index.html
             '
+          test -s site/index.html
+
+      - name: Préparer la doc dbt pour GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # Publie la doc dbt sur GitHub Pages, seulement après un push sur main dont tous les tests passent.
+  docs:
+    name: Publier la doc dbt
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [pytest, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

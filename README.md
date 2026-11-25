@@ -56,6 +56,8 @@ Le pipeline suit une architecture médaillon Bronze / Silver / Gold, standard en
 
 ## 🧱 Transformations avec dbt
 
+📖 **[Documentation dbt en ligne](https://paulfvt.github.io/finance-data-platform/)** : modèles, colonnes, tests, graphe de lineage et SQL, régénérée par la CI à chaque push sur `main`.
+
 Silver et Gold sont des modèles **dbt** (SQL), exécutés par le DAG `dbt_build` dès qu'une extraction Bronze réussit. Une seule commande, `dbt build`, enchaîne le chargement du référentiel des actifs, les contrôles d'entrée, l'écriture de Silver puis de Gold, et les contrôles de sortie.
 
 | Modèle | Rôle | Matérialisation |
@@ -202,7 +204,7 @@ Trois niveaux de tests :
 
 **22 contrôles de données dbt** à chaque run du pipeline, et **5 tests unitaires dbt** sur la logique des modèles (voir la section dbt).
 
-**Une CI GitHub Actions** à chaque push et pull request, en deux jobs : les tests Python sans Airflow, puis la construction de l'image Docker de production, dans laquelle tournent tous les tests pytest, `dbt build` et les tests unitaires dbt. Comme la CI n'a accès ni aux vraies données ni à yfinance, `scripts/make_bronze_fixture.py` génère un Bronze synthétique réaliste : 8 actifs sur 120 jours, pas de cotation le week-end hors crypto, volume nul pour les indices, runs qui se chevauchent.
+**Une CI GitHub Actions** à chaque push et pull request : les tests Python sans Airflow, puis la construction de l'image Docker de production, dans laquelle tournent tous les tests pytest, `dbt build` et les tests unitaires dbt. Sur `main`, si tout passe, un troisième job publie la [documentation dbt](https://paulfvt.github.io/finance-data-platform/) sur GitHub Pages. Comme la CI n'a accès ni aux vraies données ni à yfinance, `scripts/make_bronze_fixture.py` génère un Bronze synthétique réaliste : 8 actifs sur 120 jours, pas de cotation le week-end hors crypto, volume nul pour les indices, runs qui se chevauchent.
 
     pytest tests/ -v                                                      # en local (les tests des DAGs sont ignorés sans Airflow)
     docker compose exec airflow-scheduler python -m pytest tests -v       # tous les tests, DAGs compris
