@@ -1,43 +1,35 @@
 """
-DAG Airflow, transformation Silver quotidienne (nettoyage, rendements,
-moyennes mobiles) a partir des données Bronze.
+DAG Silver : nettoyage, rendements et moyennes mobiles à partir de Bronze.
+Lancé automatiquement dès qu'une extraction Bronze réussit.
 """
 
-import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-
-sys.path.append("/opt/airflow")
-from src.transform import run_transformation  # noqa: E402
+from pipeline_datasets import BRONZE, SILVER
+from src.transform import run_transformation
 
 default_args = {
     "owner": "paul",
     "retries": 2,
-    "retry_delay": 180,
+    "retry_delay": timedelta(minutes=3),
 }
 
 with DAG(
-    dag_id="transform_silver_daily",
+    dag_id="silver_transform",
     description="Nettoyage et calcul de métriques (Silver) à partir des données Bronze",
     default_args=default_args,
-    schedule=None,  # déclenché uniquement par le DAG Bronze, pas de planning propre
+    schedule=[BRONZE],
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    max_active_runs=1,
     tags=["silver", "transformation"],
 ) as dag:
 
-    transform_task = PythonOperator(
+    PythonOperator(
         task_id="transform_all_tickers",
         python_callable=run_transformation,
+        outlets=[SILVER],
     )
-
-    trigger_gold = TriggerDagRunOperator(
-        task_id="trigger_gold_aggregation",
-        trigger_dag_id="aggregate_gold_daily",
-    )
-
-    transform_task >> trigger_gold

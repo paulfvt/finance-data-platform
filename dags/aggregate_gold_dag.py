@@ -1,34 +1,35 @@
 """
-DAG Airflow — agrégation Gold quotidienne (corrélations glissantes)
-à partir des données Silver.
+DAG Gold : corrélations glissantes entre actifs à partir de Silver.
+Lancé automatiquement dès qu'une transformation Silver réussit.
 """
 
-import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-sys.path.append("/opt/airflow")
-from src.aggregate import run_aggregation  # noqa: E402
+from pipeline_datasets import GOLD, SILVER
+from src.aggregate import run_aggregation
 
 default_args = {
     "owner": "paul",
     "retries": 2,
-    "retry_delay": 180,
+    "retry_delay": timedelta(minutes=3),
 }
 
 with DAG(
-    dag_id="aggregate_gold_daily",
+    dag_id="gold_aggregate",
     description="Corrélations glissantes et agrégats (Gold) à partir des données Silver",
     default_args=default_args,
-    schedule=None,
+    schedule=[SILVER],
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    max_active_runs=1,
     tags=["gold", "aggregation"],
 ) as dag:
 
-    aggregate_task = PythonOperator(
+    PythonOperator(
         task_id="compute_correlations",
         python_callable=run_aggregation,
+        outlets=[GOLD],
     )
